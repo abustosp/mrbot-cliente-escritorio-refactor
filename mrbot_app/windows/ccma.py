@@ -7,9 +7,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from mrbot_app.files import open_with_default_app
+from mrbot_app.formatos import aplicar_formato_encabezado, agregar_filtros, autoajustar_columnas
 from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, safe_post
 from mrbot_app.windows.base import BaseWindow
-
 
 class CcmaWindow(BaseWindow):
     def __init__(self, master=None, config_provider=None, example_paths: Optional[Dict[str, str]] = None):
@@ -111,6 +111,7 @@ class CcmaWindow(BaseWindow):
         headers = build_headers(api_key, email)
         url = ensure_trailing_slash(base_url) + "api/v1/ccma/consulta"
         rows: List[Dict[str, Any]] = []
+        movimientos_rows: List[Dict[str, Any]] = []
         df_to_process = self.ccma_df
         if "procesar" in df_to_process.columns:
             df_to_process = df_to_process[df_to_process["procesar"].str.lower().isin(["si", "sí", "yes", "y", "1"])]
@@ -126,6 +127,7 @@ class CcmaWindow(BaseWindow):
                 "clave_representante": str(row.get("clave_representante", "")),
                 "cuit_representado": cuit_repr,
                 "proxy_request": bool(self.opt_proxy.get()),
+                "movimientos": True
             }
             resp = safe_post(url, headers, payload)
             http_status = resp.get("http_status")
@@ -148,6 +150,16 @@ class CcmaWindow(BaseWindow):
                         "response_json": json.dumps({"response_ccma": response_obj}, ensure_ascii=False),
                         "error": None
                     })
+                    movimientos_list = response_obj.get("movimientos")
+                    if isinstance(movimientos_list, list):
+                        for mov in movimientos_list:
+                            if not isinstance(mov, dict):
+                                continue
+                            movimientos_rows.append({
+                                "cuit_representante": cuit_rep,
+                                "cuit_representado": cuit_repr or response_obj.get("cuit"),
+                                **mov
+                            })
                 else:
                     rows.append({
                         "cuit_representante": cuit_rep,
@@ -163,12 +175,44 @@ class CcmaWindow(BaseWindow):
                     "error": json.dumps(resp, ensure_ascii=False)
                 })
         out_df = pd.DataFrame(rows)
+        movimientos_df = pd.DataFrame(movimientos_rows)
+        if not movimientos_df.empty:
+            columnas_movimientos = [
+                "cuit_representante",
+                "cuit_representado",
+                "periodo",
+                "impuesto",
+                "concepto",
+                "subconcepto",
+                "descripcion",
+                "fecha_movimiento",
+                "debe",
+                "haber",
+            ]
+            mov_cols = [c for c in columnas_movimientos if c in movimientos_df.columns]
+            otros_cols = [c for c in movimientos_df.columns if c not in mov_cols]
+            movimientos_df = movimientos_df[mov_cols + otros_cols]
         # Guardar consolidado en ./descargas/ReporteCCMA.xlsx
         try:
             os.makedirs("descargas", exist_ok=True)
             out_path = os.path.join("descargas", "ReporteCCMA.xlsx")
             with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
                 out_df.to_excel(writer, index=False, sheet_name="CCMA")
+                movimientos_df.to_excel(writer, index=False, sheet_name="Movimientos")
+                for hoja_nombre in ["CCMA", "Movimientos"]:
+                    hoja = writer.sheets.get(hoja_nombre)
+                    if hoja is None:
+                        continue
+                    aplicar_formato_encabezado(hoja)
+                    agregar_filtros(hoja)
+                    if hoja_nombre == "Movimientos":
+                        autoajustar_columnas(hoja)
         except Exception as exc:
             messagebox.showerror("Error", f"No se pudo guardar ReporteCCMA.xlsx: {exc}")
-        self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))
+            return
+        preview_text = df_preview(out_df, rows=min(20, len(out_df)))
+        if movimientos_df.empty:
+            preview_text += "\n\nMovimientos: sin filas retornadas."
+        else:
+            preview_text += f"\n\nMovimientos exportados: {len(movimientos_df)} filas en hoja 'Movimientos'."
+        self.set_preview(self.result_box, preview_text)
