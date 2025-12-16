@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 import requests
+from mrbot_app.config import get_request_timeouts
 
 
 def ensure_trailing_slash(url: str) -> str:
@@ -20,9 +21,11 @@ def build_headers(api_key: str, email: str) -> Dict[str, str]:
     return headers
 
 
-def safe_post(url: str, headers: Dict[str, str], payload: Dict[str, Any], timeout_sec: int = 120) -> Dict[str, Any]:
+def safe_post(url: str, headers: Dict[str, str], payload: Dict[str, Any], timeout_sec: Optional[int] = None) -> Dict[str, Any]:
+    post_timeout, _ = get_request_timeouts()
+    effective_timeout = timeout_sec if timeout_sec is not None else post_timeout
     try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=timeout_sec)
+        resp = requests.post(url, headers=headers, json=payload, timeout=effective_timeout)
         try:
             data = resp.json()
         except Exception:
@@ -32,9 +35,11 @@ def safe_post(url: str, headers: Dict[str, str], payload: Dict[str, Any], timeou
         return {"http_status": None, "data": {"success": False, "message": f"Error de conexion: {exc}"}}
 
 
-def safe_get(url: str, headers: Dict[str, str], timeout_sec: int = 60) -> Dict[str, Any]:
+def safe_get(url: str, headers: Dict[str, str], timeout_sec: Optional[int] = None) -> Dict[str, Any]:
+    _, get_timeout = get_request_timeouts()
+    effective_timeout = timeout_sec if timeout_sec is not None else get_timeout
     try:
-        resp = requests.get(url, headers=headers, timeout=timeout_sec)
+        resp = requests.get(url, headers=headers, timeout=effective_timeout)
         try:
             data = resp.json()
         except Exception:
