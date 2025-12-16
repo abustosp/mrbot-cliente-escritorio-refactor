@@ -7,7 +7,7 @@
   },
   {
    "optionDest": "filenames",
-   "value": "/mnt/ssd1/Proyectos Python/Scripts/Mr bot/clientes/mis-comprobantes-cliente/consulta-mc-gui.py"
+   "value": "/mnt/ssd1/Proyectos Python/Scripts/Mr bot/clientes/mrbot-cliente-escritorio/mrbot.py"
   },
   {
    "optionDest": "onefile",
@@ -19,7 +19,7 @@
   },
   {
    "optionDest": "icon_file",
-   "value": "/mnt/ssd1/Proyectos Python/Scripts/Mr bot/clientes/mis-comprobantes-cliente/bin/ABP-blanco-en-fondo-negro.ico"
+   "value": "/mnt/ssd1/Proyectos Python/Scripts/Mr bot/clientes/mrbot-cliente-escritorio/bin/ABP-blanco-en-fondo-negro.ico"
   },
   {
    "optionDest": "clean_build",
@@ -55,7 +55,15 @@
   },
   {
    "optionDest": "pathex",
-   "value": "/home/abp/Desktop/Proyectos Python/Scripts/Mr bot/clientes/mis-comprobantes-cliente/venv/lib/python3.12/site-packages"
+   "value": "/home/abp/Desktop/Proyectos Python/Scripts/Mr bot/clientes/mrbot-cliente-escritorio/bin"
+  },
+  {
+   "optionDest": "pathex",
+   "value": "/home/abp/Desktop/Proyectos Python/Scripts/Mr bot/clientes/mrbot-cliente-escritorio/venv/lib/python3.12/site-packages"
+  },
+  {
+   "optionDest": "datas",
+   "value": "/home/abp/Desktop/Proyectos Python/Scripts/Mr bot/clientes/mrbot-cliente-escritorio/venv/lib/python3.12/site-packages/numpy:numpy/"
   }
  ],
  "nonPyinstallerOptions": {
