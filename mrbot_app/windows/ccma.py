@@ -8,8 +8,33 @@ from tkinter import filedialog, messagebox, ttk
 
 from mrbot_app.files import open_with_default_app
 from mrbot_app.formatos import aplicar_formato_encabezado, agregar_filtros, autoajustar_columnas
-from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, safe_post
+from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, parse_bool_cell, safe_post
 from mrbot_app.windows.base import BaseWindow
+
+
+def _parse_amount(value: Any) -> Optional[float]:
+    """
+    Convierte strings con separador de miles y decimal a float.
+    Admite formatos tipo 22,307.22 (coma miles, punto decimal) y 22.307,22.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace("\xa0", "").replace(" ", "")
+    if text == "":
+        return None
+    try:
+        if "," in text and "." in text:
+            if text.rfind(".") > text.rfind(","):
+                text = text.replace(",", "")
+            else:
+                text = text.replace(".", "").replace(",", ".")
+        elif "," in text:
+            text = text.replace(".", "").replace(",", ".")
+        return float(text)
+    except Exception:
+        return None
 
 class CcmaWindow(BaseWindow):
     def __init__(self, master=None, config_provider=None, example_paths: Optional[Dict[str, str]] = None):
@@ -41,7 +66,11 @@ class CcmaWindow(BaseWindow):
         inputs.columnconfigure(1, weight=1)
 
         self.opt_proxy = tk.BooleanVar(value=False)
-        ttk.Checkbutton(container, text="proxy_request", variable=self.opt_proxy).pack(anchor="w", pady=2)
+        self.opt_movimientos = tk.BooleanVar(value=True)
+        flags = ttk.Frame(container)
+        flags.pack(anchor="w", pady=2)
+        ttk.Checkbutton(flags, text="proxy_request", variable=self.opt_proxy).pack(side="left", padx=(0, 12))
+        ttk.Checkbutton(flags, text="movimientos", variable=self.opt_movimientos).pack(side="left")
 
         btns = ttk.Frame(container)
         btns.pack(fill="x", pady=4)
@@ -98,6 +127,7 @@ class CcmaWindow(BaseWindow):
             "clave_representante": self.clave_rep_var.get(),
             "cuit_representado": self.cuit_repr_var.get().strip(),
             "proxy_request": bool(self.opt_proxy.get()),
+            "movimientos": bool(self.opt_movimientos.get()),
         }
         url = ensure_trailing_slash(base_url) + "api/v1/ccma/consulta"
         resp = safe_post(url, headers, payload)
@@ -112,6 +142,8 @@ class CcmaWindow(BaseWindow):
         url = ensure_trailing_slash(base_url) + "api/v1/ccma/consulta"
         rows: List[Dict[str, Any]] = []
         movimientos_rows: List[Dict[str, Any]] = []
+        movimientos_requested = False
+        movimientos_default = bool(self.opt_movimientos.get())
         df_to_process = self.ccma_df
         if "procesar" in df_to_process.columns:
             df_to_process = df_to_process[df_to_process["procesar"].str.lower().isin(["si", "sí", "yes", "y", "1"])]
@@ -122,12 +154,14 @@ class CcmaWindow(BaseWindow):
         for _, row in df_to_process.iterrows():
             cuit_rep = str(row.get("cuit_representante", "")).strip()
             cuit_repr = str(row.get("cuit_representado", "")).strip()
+            movimientos_flag = parse_bool_cell(row.get("movimientos"), default=movimientos_default)
+            movimientos_requested = movimientos_requested or movimientos_flag
             payload = {
                 "cuit_representante": cuit_rep,
                 "clave_representante": str(row.get("clave_representante", "")),
                 "cuit_representado": cuit_repr,
                 "proxy_request": bool(self.opt_proxy.get()),
-                "movimientos": True
+                "movimientos": movimientos_flag
             }
             resp = safe_post(url, headers, payload)
             http_status = resp.get("http_status")
@@ -141,17 +175,18 @@ class CcmaWindow(BaseWindow):
                         "cuit_representado": cuit_repr,
                         "cuit": response_obj.get("cuit"),
                         "periodo": response_obj.get("periodo"),
-                        "deuda_capital": response_obj.get("deuda_capital"),
-                        "deuda_accesorios": response_obj.get("deuda_accesorios"),
-                        "total_deuda": response_obj.get("total_deuda"),
-                        "credito_capital": response_obj.get("credito_capital"),
-                        "credito_accesorios": response_obj.get("credito_accesorios"),
-                        "total_a_favor": response_obj.get("total_a_favor"),
+                        "deuda_capital": _parse_amount(response_obj.get("deuda_capital")),
+                        "deuda_accesorios": _parse_amount(response_obj.get("deuda_accesorios")),
+                        "total_deuda": _parse_amount(response_obj.get("total_deuda")),
+                        "credito_capital": _parse_amount(response_obj.get("credito_capital")),
+                        "credito_accesorios": _parse_amount(response_obj.get("credito_accesorios")),
+                        "total_a_favor": _parse_amount(response_obj.get("total_a_favor")),
                         "response_json": json.dumps({"response_ccma": response_obj}, ensure_ascii=False),
+                        "movimientos_solicitados": movimientos_flag,
                         "error": None
                     })
                     movimientos_list = response_obj.get("movimientos")
-                    if isinstance(movimientos_list, list):
+                    if movimientos_flag and isinstance(movimientos_list, list):
                         for mov in movimientos_list:
                             if not isinstance(mov, dict):
                                 continue
@@ -164,6 +199,7 @@ class CcmaWindow(BaseWindow):
                     rows.append({
                         "cuit_representante": cuit_rep,
                         "cuit_representado": cuit_repr,
+                        "movimientos_solicitados": movimientos_flag,
                         "response_json": json.dumps(data, ensure_ascii=False),
                         "error": None
                     })
@@ -171,35 +207,55 @@ class CcmaWindow(BaseWindow):
                 rows.append({
                     "cuit_representante": cuit_rep,
                     "cuit_representado": cuit_repr,
+                    "movimientos_solicitados": movimientos_flag,
                     "response_json": None,
                     "error": json.dumps(resp, ensure_ascii=False)
                 })
         out_df = pd.DataFrame(rows)
         movimientos_df = pd.DataFrame(movimientos_rows)
+        numeric_fields_ccma = [
+            "deuda_capital",
+            "deuda_accesorios",
+            "total_deuda",
+            "credito_capital",
+            "credito_accesorios",
+            "total_a_favor",
+        ]
+        for col in numeric_fields_ccma:
+            if col in out_df.columns:
+                out_df[col] = out_df[col].apply(_parse_amount)
+        columnas_movimientos = [
+            "cuit_representante",
+            "cuit_representado",
+            "periodo",
+            "impuesto",
+            "concepto",
+            "subconcepto",
+            "descripcion",
+            "fecha_movimiento",
+            "debe",
+            "haber",
+        ]
+        if movimientos_df.empty and movimientos_requested:
+            movimientos_df = pd.DataFrame(columns=columnas_movimientos)
         if not movimientos_df.empty:
-            columnas_movimientos = [
-                "cuit_representante",
-                "cuit_representado",
-                "periodo",
-                "impuesto",
-                "concepto",
-                "subconcepto",
-                "descripcion",
-                "fecha_movimiento",
-                "debe",
-                "haber",
-            ]
             mov_cols = [c for c in columnas_movimientos if c in movimientos_df.columns]
             otros_cols = [c for c in movimientos_df.columns if c not in mov_cols]
             movimientos_df = movimientos_df[mov_cols + otros_cols]
+            for monto_col in ("debe", "haber"):
+                if monto_col in movimientos_df.columns:
+                    movimientos_df[monto_col] = movimientos_df[monto_col].apply(_parse_amount)
         # Guardar consolidado en ./descargas/ReporteCCMA.xlsx
         try:
             os.makedirs("descargas", exist_ok=True)
             out_path = os.path.join("descargas", "ReporteCCMA.xlsx")
             with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
                 out_df.to_excel(writer, index=False, sheet_name="CCMA")
-                movimientos_df.to_excel(writer, index=False, sheet_name="Movimientos")
-                for hoja_nombre in ["CCMA", "Movimientos"]:
+                hojas_creadas = ["CCMA"]
+                if movimientos_requested or not movimientos_df.empty:
+                    movimientos_df.to_excel(writer, index=False, sheet_name="Movimientos")
+                    hojas_creadas.append("Movimientos")
+                for hoja_nombre in hojas_creadas:
                     hoja = writer.sheets.get(hoja_nombre)
                     if hoja is None:
                         continue
@@ -211,8 +267,10 @@ class CcmaWindow(BaseWindow):
             messagebox.showerror("Error", f"No se pudo guardar ReporteCCMA.xlsx: {exc}")
             return
         preview_text = df_preview(out_df, rows=min(20, len(out_df)))
-        if movimientos_df.empty:
-            preview_text += "\n\nMovimientos: sin filas retornadas."
+        if not movimientos_requested and movimientos_df.empty:
+            preview_text += "\n\nMovimientos: no se solicitaron."
+        elif movimientos_df.empty:
+            preview_text += "\n\nMovimientos: hoja sin filas (sin movimientos devueltos)."
         else:
             preview_text += f"\n\nMovimientos exportados: {len(movimientos_df)} filas en hoja 'Movimientos'."
         self.set_preview(self.result_box, preview_text)

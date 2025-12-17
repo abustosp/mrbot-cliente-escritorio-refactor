@@ -127,12 +127,14 @@ def ensure_example_excels() -> Dict[str, str]:
                     "cuit_representante": "20123456789",
                     "clave_representante": "clave_demo",
                     "cuit_representado": "20987654321",
+                    "movimientos": "SI",
                 },
                 {
                     "procesar": "NO",
                     "cuit_representante": "20111111111",
                     "clave_representante": "clave_no",
                     "cuit_representado": "20999999999",
+                    "movimientos": "NO",
                 },
             ]
         ),
@@ -149,7 +151,16 @@ def ensure_example_excels() -> Dict[str, str]:
     for name, df in examples.items():
         path = os.path.join(EXAMPLE_DIR, name)
         paths[name] = path
-        if not os.path.exists(path):
+        expected_cols = [c.strip().lower() for c in df.columns]
+        should_write = not os.path.exists(path)
+        if not should_write and name == "ccma.xlsx":
+            try:
+                current_cols = [c.strip().lower() for c in pd.read_excel(path, nrows=0).columns]
+                if any(col not in current_cols for col in expected_cols):
+                    should_write = True
+            except Exception:
+                should_write = True
+        if should_write:
             try:
                 df.to_excel(path, index=False)
                 _format_excel(path)
