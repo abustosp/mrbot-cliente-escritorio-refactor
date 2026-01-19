@@ -138,6 +138,114 @@ def ensure_example_excels() -> Dict[str, str]:
                 },
             ]
         ),
+        "mis_retenciones.xlsx": pd.DataFrame(
+            [
+                {
+                    "procesar": "SI",
+                    "cuit_representante": "20123456789",
+                    "clave_representante": "tu_clave_fiscal",
+                    "cuit_representado": "30987654321",
+                    "denominacion": "Empresa Ejemplo SA",
+                    "desde": "01/11/2025",
+                    "hasta": "30/11/2025",
+                    "ubicacion_descarga": "./descargas/Mis_Retenciones/30987654321",
+                },
+                {
+                    "procesar": "NO",
+                    "cuit_representante": "20111111111",
+                    "clave_representante": "clave_no",
+                    "cuit_representado": "20999999999",
+                    "denominacion": "Ejemplo NO",
+                    "desde": "01/01/2024",
+                    "hasta": "31/01/2024",
+                    "ubicacion_descarga": "./descargas/Mis_Retenciones/20999999999",
+                },
+            ]
+        ),
+        "sifere.xlsx": pd.DataFrame(
+            [
+                {
+                    "procesar": "SI",
+                    "cuit_representante": "27123456789",
+                    "clave_representante": "tu_clave_fiscal",
+                    "cuit_representado": "20987654321",
+                    "periodo": "202401",
+                    "representado_nombre": "Empresa Ejemplo SA",
+                    "ubicacion_descarga": "./descargas/SIFERE/20987654321",
+                },
+                {
+                    "procesar": "NO",
+                    "cuit_representante": "20111111111",
+                    "clave_representante": "clave_no",
+                    "cuit_representado": "20999999999",
+                    "periodo": "202312",
+                    "representado_nombre": "Ejemplo NO",
+                    "ubicacion_descarga": "./descargas/SIFERE/20999999999",
+                },
+            ]
+        ),
+        "declaracion_en_linea.xlsx": pd.DataFrame(
+            [
+                {
+                    "procesar": "SI",
+                    "cuit_representante": "20123456789",
+                    "clave_representante": "tu_clave_fiscal",
+                    "cuit_representado": "30987654321",
+                    "representado_nombre": "Empresa Ejemplo SA",
+                    "periodo_desde": "202511",
+                    "periodo_hasta": "202511",
+                    "ubicacion_descarga": "./descargas/Declaracion_en_Linea/30987654321",
+                },
+                {
+                    "procesar": "NO",
+                    "cuit_representante": "20111111111",
+                    "clave_representante": "clave_no",
+                    "cuit_representado": "20999999999",
+                    "representado_nombre": "Ejemplo NO",
+                    "periodo_desde": "202401",
+                    "periodo_hasta": "202412",
+                    "ubicacion_descarga": "./descargas/Declaracion_en_Linea/20999999999",
+                },
+            ]
+        ),
+        "mis_facilidades.xlsx": pd.DataFrame(
+            [
+                {
+                    "procesar": "SI",
+                    "cuit_login": "20123456789",
+                    "clave": "tu_clave_fiscal",
+                    "cuit_representado": "30987654321",
+                    "denominacion": "Empresa Ejemplo SA",
+                    "ubicacion_descarga": "./descargas/Mis_Facilidades/30987654321",
+                },
+                {
+                    "procesar": "NO",
+                    "cuit_login": "20111111111",
+                    "clave": "clave_no",
+                    "cuit_representado": "20999999999",
+                    "denominacion": "Ejemplo NO",
+                    "ubicacion_descarga": "./descargas/Mis_Facilidades/20999999999",
+                },
+            ]
+        ),
+        "aportes_en_linea.xlsx": pd.DataFrame(
+            [
+                {
+                    "procesar": "SI",
+                    "cuit_login": "20123456789",
+                    "clave": "tu_clave_fiscal",
+                    "cuit_representado": "20123456789",
+                    "ubicacion_descarga": "./descargas/Aportes_en_Linea/20123456789",
+                },
+                {
+                    "procesar": "NO",
+                    "cuit_login": "20111111111",
+                    "clave": "clave_no",
+                    "cuit_representado": "20999999999",
+                    "ubicacion_descarga": "./descargas/Aportes_en_Linea/20999999999",
+                },
+            ]
+        ),
         "apocrifos.xlsx": pd.DataFrame(
             [
                 {"cuit": "20333444555"},

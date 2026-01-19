@@ -8,10 +8,15 @@ from mrbot_app.examples import ensure_example_excels
 from mrbot_app.files import open_with_default_app
 from mrbot_app.windows import (
     ApocrifosWindow,
+    AportesEnLineaWindow,
     CcmaWindow,
     ConsultaCuitWindow,
+    DeclaracionEnLineaWindow,
     GuiDescargaMC,
+    MisFacilidadesWindow,
     RcelWindow,
+    MisRetencionesWindow,
+    SifereWindow,
     SctWindow,
     UsuarioWindow,
 )
@@ -74,12 +79,17 @@ class MainMenu(tk.Tk):
         ttk.Button(btns, text="Comprobantes en Linea (RCEL)", width=btn_width, command=self.open_rcel).grid(row=0, column=1, padx=6, pady=4, sticky="nsew")
         ttk.Button(btns, text="Sistema de Cuentas Tributarias (SCT)", width=btn_width, command=self.open_sct).grid(row=1, column=0, padx=6, pady=4, sticky="nsew")
         ttk.Button(btns, text="Cuenta Corriente (CCMA)", width=btn_width, command=self.open_ccma).grid(row=1, column=1, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="Consulta Apocrifos", width=btn_width, command=self.open_apoc).grid(row=2, column=0, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="Consulta de CUIT", width=btn_width, command=self.open_cuit).grid(row=2, column=1, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="Usuarios", width=btn_width, command=self.open_usuario).grid(row=3, column=0, columnspan=2, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Mis Retenciones", width=btn_width, command=self.open_mis_retenciones).grid(row=2, column=0, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="SIFERE consultas", width=btn_width, command=self.open_sifere).grid(row=2, column=1, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="DDJJ en Linea", width=btn_width, command=self.open_declaracion_linea).grid(row=3, column=0, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Mis Facilidades", width=btn_width, command=self.open_mis_facilidades).grid(row=3, column=1, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Aportes en Linea", width=btn_width, command=self.open_aportes_linea).grid(row=4, column=0, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Consulta Apocrifos", width=btn_width, command=self.open_apoc).grid(row=4, column=1, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Consulta de CUIT", width=btn_width, command=self.open_cuit).grid(row=5, column=0, columnspan=2, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Usuarios", width=btn_width, command=self.open_usuario).grid(row=6, column=0, columnspan=2, padx=6, pady=4, sticky="nsew")
 
         btns.columnconfigure((0, 1), weight=1, uniform="menu")
-        for r in range(4):
+        for r in range(7):
             btns.rowconfigure(r, weight=1)
 
     def current_config(self) -> tuple[str, str, str]:
@@ -115,6 +125,21 @@ class MainMenu(tk.Tk):
 
     def open_ccma(self) -> None:
         CcmaWindow(self, self.current_config, self.example_paths)
+
+    def open_mis_retenciones(self) -> None:
+        MisRetencionesWindow(self, self.current_config, self.example_paths)
+
+    def open_sifere(self) -> None:
+        SifereWindow(self, self.current_config, self.example_paths)
+
+    def open_declaracion_linea(self) -> None:
+        DeclaracionEnLineaWindow(self, self.current_config, self.example_paths)
+
+    def open_mis_facilidades(self) -> None:
+        MisFacilidadesWindow(self, self.current_config, self.example_paths)
+
+    def open_aportes_linea(self) -> None:
+        AportesEnLineaWindow(self, self.current_config, self.example_paths)
 
     def open_apoc(self) -> None:
         ApocrifosWindow(self, self.current_config, self.example_paths)
