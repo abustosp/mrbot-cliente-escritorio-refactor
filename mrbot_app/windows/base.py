@@ -16,6 +16,17 @@ class BaseWindow(tk.Toplevel):
         self.configure(background=BG)
         self.title(title)
         self.resizable(False, False)
+        
+        # Traer ventana al frente
+        self.lift()
+        self.focus_force()
+        self.attributes('-topmost', True)
+        self.after(100, lambda: self.attributes('-topmost', False))
+
+    def bring_to_front(self) -> None:
+        """Trae la ventana al frente después de operaciones como filedialog."""
+        self.lift()
+        self.focus_force()
 
     def add_section_label(self, parent, text: str) -> None:
         lbl = ttk.Label(parent, text=text, foreground=FG, background=BG, font=("Arial", 11, "bold"))

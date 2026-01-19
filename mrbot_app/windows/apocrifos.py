@@ -56,6 +56,7 @@ class ApocrifosWindow(BaseWindow):
 
     def cargar_excel(self) -> None:
         filename = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")])
+        self.bring_to_front()
         if not filename:
             return
         try:

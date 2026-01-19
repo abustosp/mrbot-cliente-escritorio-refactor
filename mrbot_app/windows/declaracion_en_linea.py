@@ -87,6 +87,7 @@ class DeclaracionEnLineaWindow(BaseWindow):
 
     def seleccionar_carpeta_descarga(self) -> None:
         folder = filedialog.askdirectory()
+        self.bring_to_front()
         if folder:
             self.download_dir_var.set(folder)
 
@@ -100,6 +101,7 @@ class DeclaracionEnLineaWindow(BaseWindow):
 
     def cargar_excel(self) -> None:
         filename = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")])
+        self.bring_to_front()
         if not filename:
             return
         try:

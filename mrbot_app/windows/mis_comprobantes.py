@@ -69,6 +69,7 @@ class GuiDescargaMC(BaseWindow):
 
     def open_excel_file(self) -> None:
         filename = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")])
+        self.bring_to_front()
         if not filename:
             return
         self.selected_excel = filename
