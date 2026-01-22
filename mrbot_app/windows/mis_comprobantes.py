@@ -2,7 +2,6 @@ import contextlib
 import io
 import json
 import os
-import sys
 from typing import Dict, Optional
 
 import pandas as pd
@@ -101,17 +100,10 @@ class GuiDescargaMC(BaseWindow):
                 if not message:
                     return 0
                 gui.append_log(message)
-                try:
-                    sys.__stdout__.write(message)
-                except Exception:
-                    pass
                 return len(message)
 
             def flush(self) -> None:
-                try:
-                    sys.__stdout__.flush()
-                except Exception:
-                    pass
+                return
 
         return _TkTextWriter()
 
