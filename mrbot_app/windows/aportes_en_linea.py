@@ -70,9 +70,11 @@ class AportesEnLineaWindow(BaseWindow):
         self.result_box = self.add_preview(container, height=12)
         self.set_preview(self.preview, "Excel no cargado o sin previsualizar. Usa 'Previsualizar Excel'.")
 
+        self.progress_frame = self.add_progress_bar(container, label="Progreso")
+
         log_frame = ttk.LabelFrame(container, text="Logs de ejecucion")
         log_frame.pack(fill="both", expand=True, pady=(6, 0))
-        self.log_text = tk.Text(log_frame, height=10, wrap="word", background="#1b1b1b", foreground="#dcdcdc")
+        self.log_text = tk.Text(log_frame, height=10, wrap="word", background="#1b1b1b", foreground="#ffffff")
         self.log_text.pack(fill="both", expand=True)
         self.log_text.configure(state="disabled")
 
@@ -183,6 +185,7 @@ class AportesEnLineaWindow(BaseWindow):
 
     def procesar_excel(self) -> None:
         if self.aportes_df is None or self.aportes_df.empty:
+            self.set_progress(0, 0)
             messagebox.showerror("Error", "Carga un Excel primero.")
             return
         base_url, api_key, email = self.config_provider()
@@ -191,12 +194,15 @@ class AportesEnLineaWindow(BaseWindow):
         rows: List[Dict[str, Any]] = []
         df_to_process = self._filter_procesar(self.aportes_df)
         if df_to_process is None or df_to_process.empty:
+            self.set_progress(0, 0)
             messagebox.showwarning("Sin filas a procesar", "No hay filas marcadas con procesar=SI.")
             return
 
         self.clear_logs()
         self.append_log(f"Procesando {len(df_to_process)} filas Aportes en Linea\n")
-        for _, row in df_to_process.iterrows():
+        total = len(df_to_process)
+        self.set_progress(0, total)
+        for idx, (_, row) in enumerate(df_to_process.iterrows(), start=1):
             cuit_login = str(row.get("cuit_login", "")).strip()
             cuit_repr = self._optional_value(str(row.get("cuit_representado", "")))
             row_download = str(row.get("ubicacion_descarga") or row.get("path_descarga") or row.get("carpeta_descarga") or "").strip()
@@ -233,5 +239,6 @@ class AportesEnLineaWindow(BaseWindow):
                     "carpeta_descarga": download_dir,
                 }
             )
+            self.set_progress(idx, total)
         out_df = pd.DataFrame(rows)
         self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))

@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 from mrbot_app.config import ENV_FILE
-from mrbot_app.constants import BG, FG
+from mrbot_app.constants import ACCENT, BG, FG
 from mrbot_app.examples import ensure_example_excels
 from mrbot_app.files import open_with_default_app
 from mrbot_app.windows import (
@@ -43,6 +43,7 @@ class MainMenu(tk.Tk):
         style.configure("TLabel", background=BG, foreground=FG)
         style.configure("TButton", foreground="#000000")
         style.configure("TCheckbutton", background=BG, foreground=FG)
+        style.configure("TProgressbar", troughcolor="#1e1e1e", background=ACCENT)
 
         self.example_paths = ensure_example_excels()
 

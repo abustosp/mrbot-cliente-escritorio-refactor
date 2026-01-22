@@ -46,6 +46,8 @@ class ConsultaCuitWindow(BaseWindow):
         self.result_box = self.add_preview(container, height=12)
         self.set_preview(self.preview, "Vista previa del Excel (primeras filas).")
 
+        self.progress_frame = self.add_progress_bar(container, label="Progreso")
+
     def abrir_ejemplo(self) -> None:
         path = self.example_paths.get("consulta_cuit.xlsx")
         if not path:
@@ -75,12 +77,15 @@ class ConsultaCuitWindow(BaseWindow):
 
     def procesar_excel(self) -> None:
         if self.cuit_df is None or self.cuit_df.empty:
+            self.set_progress(0, 0)
             messagebox.showerror("Error", "Carga un Excel primero.")
             return
         base_url, api_key, email = self.config_provider()
         headers = build_headers(api_key, email)
         url = ensure_trailing_slash(base_url) + "api/v1/consulta_cuit/masivo"
         cuits = [str(row.get("cuit", "")).strip() for _, row in self.cuit_df.iterrows() if str(row.get("cuit", "")).strip()]
+        total = len(cuits)
+        self.set_progress(0, total)
         payload = {"cuits": cuits}
         resp = safe_post(url, headers, payload)
         data = resp.get("data", {})
@@ -92,3 +97,4 @@ class ConsultaCuitWindow(BaseWindow):
                     rows.append(item if isinstance(item, dict) else {"item": item})
         out_df = pd.DataFrame(rows) if rows else pd.DataFrame([data])
         self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))
+        self.set_progress(total, total)

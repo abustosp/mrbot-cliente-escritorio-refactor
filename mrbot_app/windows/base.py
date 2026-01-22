@@ -16,6 +16,9 @@ class BaseWindow(tk.Toplevel):
         self.configure(background=BG)
         self.title(title)
         self.resizable(False, False)
+        style = ttk.Style(self)
+        style.configure("TLabelframe", background=BG)
+        style.configure("TLabelframe.Label", background=BG, foreground=FG)
         
         # Traer ventana al frente
         self.lift()
@@ -43,6 +46,34 @@ class BaseWindow(tk.Toplevel):
             txt.pack(anchor="w", pady=4, padx=2, fill="both", expand=False)
         txt.configure(state="disabled")
         return txt
+
+    def add_progress_bar(self, parent, label: str = "Progreso") -> ttk.LabelFrame:
+        style = ttk.Style(self)
+        style.configure("Progress.TLabel", background="#1b1b1b", foreground="#ffffff")
+        frame = ttk.LabelFrame(parent, text=label)
+        frame.pack(fill="x", pady=(6, 0))
+        frame.columnconfigure(0, weight=1)
+        self._progress_label_var = tk.StringVar(value="0/0")
+        self._progress_bar = ttk.Progressbar(frame, orient="horizontal", mode="determinate")
+        self._progress_bar.grid(row=0, column=0, sticky="ew")
+        ttk.Label(frame, textvariable=self._progress_label_var, style="Progress.TLabel").grid(
+            row=0, column=1, sticky="w", padx=(8, 0)
+        )
+        return frame
+
+    def set_progress(self, current: int, total: int) -> None:
+        progress_bar = getattr(self, "_progress_bar", None)
+        progress_label_var = getattr(self, "_progress_label_var", None)
+        if progress_bar is None or progress_label_var is None:
+            return
+        if total <= 0:
+            progress_bar.configure(maximum=1, value=0)
+            progress_label_var.set("0/0")
+        else:
+            value = max(0, min(int(current), int(total)))
+            progress_bar.configure(maximum=int(total), value=value)
+            progress_label_var.set(f"{value}/{int(total)}")
+        progress_bar.update_idletasks()
 
     def set_preview(self, widget: Optional[tk.Text], content: str) -> None:
         if widget is None:

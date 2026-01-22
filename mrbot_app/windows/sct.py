@@ -83,6 +83,9 @@ class SctWindow(BaseWindow):
         self.preview = self.add_preview(container, height=8, show=False)
         self.result_box = self.add_preview(container, height=12)
         self.set_preview(self.preview, "Excel no cargado o sin previsualizar. Usa 'Previsualizar Excel'.")
+
+        self.progress_frame = self.add_progress_bar(container, label="Progreso")
+
         log_frame = ttk.LabelFrame(container, text="Logs de ejecución")
         log_frame.pack(fill="both", expand=True, pady=(6, 0))
         self.log_text = tk.Text(
@@ -90,7 +93,7 @@ class SctWindow(BaseWindow):
             height=12,
             wrap="word",
             background="#1b1b1b",
-            foreground="#dcdcdc",
+            foreground="#ffffff",
         )
         self.log_text.pack(fill="both", expand=True)
         self.log_text.configure(state="disabled")
@@ -377,6 +380,7 @@ class SctWindow(BaseWindow):
 
     def procesar_excel(self) -> None:
         if self.sct_df is None or self.sct_df.empty:
+            self.set_progress(0, 0)
             messagebox.showerror("Error", "Carga un Excel primero.")
             return
         base_url, api_key, email = self.config_provider()
@@ -387,12 +391,15 @@ class SctWindow(BaseWindow):
         if "procesar" in df_to_process.columns:
             df_to_process = df_to_process[df_to_process["procesar"].str.lower().isin(["si", "sí", "yes", "y", "1"])]
         if df_to_process is None or df_to_process.empty:
+            self.set_progress(0, 0)
             messagebox.showwarning("Sin filas a procesar", "No hay filas marcadas con procesar=SI.")
             return
 
         self.clear_logs()
         self.append_log(f"Procesando {len(df_to_process)} filas SCT", style="header")
-        for _, row in df_to_process.iterrows():
+        total = len(df_to_process)
+        self.set_progress(0, total)
+        for idx, (_, row) in enumerate(df_to_process.iterrows(), start=1):
             include_deuda = parse_bool_cell(row.get("deuda"), default=self.opt_deuda.get()) if "deuda" in row else bool(self.opt_deuda.get())
             include_venc = (
                 parse_bool_cell(row.get("vencimientos"), default=self.opt_vencimientos.get()) if "vencimientos" in row else bool(self.opt_vencimientos.get())
@@ -413,6 +420,7 @@ class SctWindow(BaseWindow):
                         "error_message": "Sin formato de salida seleccionado para esta fila",
                     }
                 )
+                self.set_progress(idx, total)
                 continue
             block_config = {
                 "deudas": {
@@ -464,5 +472,6 @@ class SctWindow(BaseWindow):
                     "errores_descarga": "; ".join(download_errors) if download_errors else None,
                 }
             )
+            self.set_progress(idx, total)
         out_df = pd.DataFrame(rows)
         self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))

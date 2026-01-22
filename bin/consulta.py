@@ -6,7 +6,7 @@ import json
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Callable
 from datetime import datetime, date
 import pandas as pd
 
@@ -367,7 +367,7 @@ def crear_directorio_seguro(ruta,
             return 'Descargas'
 
 
-def consulta_mc_csv(excel_path: Optional[str] = None):
+def consulta_mc_csv(excel_path: Optional[str] = None, progress_callback: Optional[Callable[[int, int], None]] = None):
     """
     Procesa el archivo Excel (o CSV legacy) de consultas masivas de Mis Comprobantes.
     
@@ -380,6 +380,7 @@ def consulta_mc_csv(excel_path: Optional[str] = None):
     
     Args:
         excel_path: Ruta opcional al Excel a procesar (por ejemplo, './ejemplos_api/mis_comprobantes.xlsx').
+        progress_callback: Funcion opcional que recibe (current, total) para actualizar progreso.
     
     El archivo Excel se lee con pandas. Si no existe, se intenta usar el CSV con cp1252 y luego utf-8.
     """
@@ -449,14 +450,22 @@ def consulta_mc_csv(excel_path: Optional[str] = None):
 
     if not datos_normalizados:
         print("⚠ El archivo de configuración no contiene filas para procesar")
+        if progress_callback:
+            progress_callback(0, 0)
         return
+
+    filas_a_procesar = [dato for dato in datos_normalizados if _to_bool(dato.get('procesar', ''), default=False)]
+    if not filas_a_procesar:
+        print("⚠ El archivo de configuración no contiene filas para procesar")
+
+    total_filas = len(filas_a_procesar)
+    if progress_callback:
+        progress_callback(0, total_filas)
     
     errores = []
     errores2 = []
     
-    for dato in datos_normalizados:
-        if not _to_bool(dato.get('procesar', ''), default=False):
-            continue
+    for idx, dato in enumerate(filas_a_procesar, start=1):
             
         desde = _format_date(dato.get('desde', ''))
         hasta = _format_date(dato.get('hasta', ''))
@@ -519,6 +528,8 @@ def consulta_mc_csv(excel_path: Optional[str] = None):
                     'error': str(error_msg)
                 })
                 print(f"✗ Error FATAL en la consulta: {error_msg}")
+                if progress_callback:
+                    progress_callback(idx, total_filas)
                 continue
             
             # Mostrar advertencias si las hay (pero continuar con el procesamiento)
@@ -646,11 +657,15 @@ def consulta_mc_csv(excel_path: Optional[str] = None):
                 print("⚠ No hay archivos de MinIO para descargar")
             
             print(f"✓ Procesamiento completado para {representado_nombre}")
+            if progress_callback:
+                progress_callback(idx, total_filas)
                 
         except Exception as e:
             error_msg = f"Error en {representado_nombre} - {representado_cuit}: {str(e)}"
             errores.append(error_msg)
             print(f"✗ {error_msg}")
+            if progress_callback:
+                progress_callback(idx, total_filas)
     
     # Guardar errores si los hay
     if errores:
@@ -672,7 +687,7 @@ def consulta_mc_csv(excel_path: Optional[str] = None):
         from tkinter import messagebox
         
         # Preparar mensaje de resumen
-        total_procesados = len([d for d in datos_normalizados if _to_bool(d.get('procesar', ''), default=False)])
+        total_procesados = len(filas_a_procesar)
         exitosos = total_procesados - len(errores) - len(errores2)
         
         mensaje = f"Procesamiento completado\n\n"

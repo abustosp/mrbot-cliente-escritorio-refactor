@@ -53,6 +53,8 @@ class GuiDescargaMC(BaseWindow):
         self.preview = self.add_preview(container, height=8, show=False)
         self.set_preview(self.preview, "Selecciona un Excel y presiona 'Previsualizar Excel' para ver los datos.")
 
+        self.progress_frame = self.add_progress_bar(container, label="Progreso")
+
         log_frame = ttk.LabelFrame(container, text="Logs de ejecución")
         log_frame.pack(fill="both", expand=True, pady=(6, 0))
         self.log_text = tk.Text(
@@ -60,7 +62,7 @@ class GuiDescargaMC(BaseWindow):
             height=16,
             wrap="word",
             background="#1b1b1b",
-            foreground="#dcdcdc",
+            foreground="#ffffff",
         )
         self.log_text.pack(fill="both", expand=True)
         self.log_text.configure(state="disabled")
@@ -155,10 +157,11 @@ class GuiDescargaMC(BaseWindow):
             try:
                 self.processing = True
                 self.clear_logs()
+                self.set_progress(0, 0)
                 self.append_log(f"Iniciando proceso con: {excel_to_use}\n\n")
                 writer = self._create_log_writer()
                 with contextlib.redirect_stdout(writer), contextlib.redirect_stderr(writer):
-                    consulta_mc_csv(excel_to_use)
+                    consulta_mc_csv(excel_to_use, progress_callback=self.set_progress)
                 messagebox.showinfo("Proceso finalizado", f"Consulta finalizada con {excel_to_use}. Revisa los logs en la ventana.")
             except Exception as exc:
                 messagebox.showerror("Error", f"No se pudo ejecutar consulta_mc_csv: {exc}")
