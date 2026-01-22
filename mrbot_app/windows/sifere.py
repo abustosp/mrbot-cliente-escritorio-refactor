@@ -116,11 +116,7 @@ class SifereWindow(BaseWindow):
     def append_log(self, text: str) -> None:
         if not text:
             return
-        self.log_text.configure(state="normal")
-        self.log_text.insert(tk.END, text)
-        self.log_text.see(tk.END)
-        self.log_text.configure(state="disabled")
-        self.log_text.update_idletasks()
+        self.log_message(text)
 
     def _filter_procesar(self, df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
         if df is None:
@@ -162,7 +158,7 @@ class SifereWindow(BaseWindow):
             return 0, [], None
         download_dir, dir_msgs = prepare_download_dir(self.MODULE_DIR, desired_dir, cuit_repr)
         for msg in dir_msgs:
-            self.append_log(msg + "\n")
+            self.log_info(msg)
         downloads, errors = download_links(links, download_dir)
         return downloads, errors, download_dir
 
@@ -182,18 +178,20 @@ class SifereWindow(BaseWindow):
         self.clear_logs()
         safe_payload = dict(payload)
         safe_payload["clave_representante"] = "***"
-        self.append_log(f"Consulta individual SIFERE: {json.dumps(safe_payload, ensure_ascii=False)}\n")
+        self.log_start("SIFERE", {"modo": "individual"})
+        self.log_separator(payload["cuit_representado"])
+        self.log_request(safe_payload)
         resp = safe_post(url, headers, payload)
         data = resp.get("data", {})
-        self.append_log(f"Respuesta HTTP {resp.get('http_status')}: {json.dumps(data, ensure_ascii=False)}\n")
+        self.log_response(resp.get("http_status"), data)
         cuit_folder = payload["cuit_representado"]
         downloads, errors, download_dir = self._download_from_data(data, self.download_dir_var.get(), cuit_folder)
         if downloads:
-            self.append_log(f"Descargas completadas: {downloads} -> {download_dir}\n")
+            self.log_info(f"Descargas completadas: {downloads} -> {download_dir}")
         elif data:
-            self.append_log("Sin links de descarga en la respuesta.\n")
+            self.log_info("Sin links de descarga en la respuesta.")
         for err in errors:
-            self.append_log(f"Error de descarga: {err}\n")
+            self.log_error(f"Descarga: {err}")
         self.set_preview(self.result_box, json.dumps(resp, indent=2, ensure_ascii=False))
 
     def procesar_excel(self) -> None:
@@ -212,13 +210,14 @@ class SifereWindow(BaseWindow):
             return
 
         self.clear_logs()
-        self.append_log(f"Procesando {len(df_to_process)} filas SIFERE\n")
+        self.log_start("SIFERE", {"modo": "masivo", "filas": len(df_to_process)})
         total = len(df_to_process)
         self.set_progress(0, total)
         for idx, (_, row) in enumerate(df_to_process.iterrows(), start=1):
             cuit_rep = str(row.get("cuit_representante", "")).strip()
             cuit_repr = str(row.get("cuit_representado", "")).strip()
             row_download = str(row.get("ubicacion_descarga") or row.get("path_descarga") or row.get("carpeta_descarga") or "").strip()
+            self.log_separator(cuit_repr)
             payload = {
                 "cuit_representante": cuit_rep,
                 "clave_representante": str(row.get("clave_representante", "")),
@@ -230,17 +229,17 @@ class SifereWindow(BaseWindow):
             }
             safe_payload = dict(payload)
             safe_payload["clave_representante"] = "***"
-            self.append_log(f"- Fila {cuit_repr}: payload {json.dumps(safe_payload, ensure_ascii=False)}\n")
+            self.log_request(safe_payload)
             resp = safe_post(url, headers, payload)
             data = resp.get("data", {})
-            self.append_log(f"  -> HTTP {resp.get('http_status')}: {json.dumps(data, ensure_ascii=False)}\n")
+            self.log_response(resp.get("http_status"), data)
             downloads, errors, download_dir = self._download_from_data(data, row_download or self.download_dir_var.get(), cuit_repr)
             if downloads:
-                self.append_log(f"    Descargas completadas: {downloads} -> {download_dir}\n")
+                self.log_info(f"Descargas completadas: {downloads} -> {download_dir}")
             elif data:
-                self.append_log("    Sin links de descarga\n")
+                self.log_info("Sin links de descarga")
             for err in errors:
-                self.append_log(f"    Error de descarga: {err}\n")
+                self.log_error(f"Descarga: {err}")
             rows.append(
                 {
                     "cuit_representado": cuit_repr,

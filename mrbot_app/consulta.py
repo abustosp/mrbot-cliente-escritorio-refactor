@@ -1,6 +1,7 @@
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Dict, List
+from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional
 
 import requests
 from dotenv import load_dotenv
@@ -80,13 +81,31 @@ def descargar_archivo_minio(url: str, destino: str) -> Dict[str, Any]:
         }
 
 
-def descargar_archivos_minio_concurrente(urls: List[Dict[str, str]], max_workers: int = MAX_WORKERS) -> List[Dict[str, Any]]:
+def _log_message(message: str, log_fn: Optional[Callable[[str], None]] = None) -> None:
+    if log_fn:
+        log_fn(message)
+        return
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lines = str(message).splitlines() or [""]
+    formatted = "\n".join(
+        f"[{timestamp}] {line}" if line else f"[{timestamp}]"
+        for line in lines
+    )
+    print(formatted)
+
+
+def descargar_archivos_minio_concurrente(
+    urls: List[Dict[str, str]],
+    max_workers: int = MAX_WORKERS,
+    log_fn: Optional[Callable[[str], None]] = None,
+) -> List[Dict[str, Any]]:
     """
     Descarga múltiples archivos desde MinIO de forma concurrente.
 
     Args:
         urls: Lista de dicts con "url" y "destino"
         max_workers: Número de workers concurrentes (default: 10)
+        log_fn: Funcion opcional para registrar logs (UI/CLI)
 
     Returns:
         Lista de resultados de las descargas
@@ -104,9 +123,9 @@ def descargar_archivos_minio_concurrente(urls: List[Dict[str, str]], max_workers
             resultados.append(resultado)
 
             if resultado["success"]:
-                print(f"✓ Descargado: {os.path.basename(resultado["destino"])}")
+                _log_message(f"INFO: Descargado: {os.path.basename(resultado['destino'])}", log_fn)
             else:
-                print(f"✗ Error descargando: {resultado["destino"]} - {resultado["error"]}")
+                _log_message(f"ERROR: Error descargando: {resultado['destino']} - {resultado['error']}", log_fn)
 
     return resultados
 

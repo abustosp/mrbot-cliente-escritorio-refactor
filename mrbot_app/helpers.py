@@ -49,11 +49,40 @@ def safe_get(url: str, headers: Dict[str, str], timeout_sec: Optional[int] = Non
         return {"http_status": None, "data": {"success": False, "message": f"Error de conexion: {exc}"}}
 
 
+def _format_period_aaaamm(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float):
+        try:
+            if pd.isna(value):
+                return ""
+        except Exception:
+            pass
+    if isinstance(value, (int, float)):
+        try:
+            return f"{int(value):06d}"
+        except Exception:
+            return str(value)
+    text = str(value).strip()
+    if not text:
+        return text
+    if text.endswith(".0") and text[:-2].isdigit():
+        text = text[:-2]
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if len(digits) == 6:
+        return digits
+    return text
+
+
 def _format_dates_str(df: pd.DataFrame) -> pd.DataFrame:
     """Intenta formatear columnas con nombres que contengan desde/hasta/fecha a dd/mm/aaaa como string."""
     out = df.copy()
     for col in out.columns:
-        if any(key in col.lower() for key in ["desde", "hasta", "fecha"]):
+        lower_col = col.lower()
+        if "periodo" in lower_col and any(key in lower_col for key in ["desde", "hasta"]):
+            out[col] = out[col].apply(_format_period_aaaamm)
+            continue
+        if any(key in lower_col for key in ["desde", "hasta", "fecha"]):
             try:
                 out[col] = pd.to_datetime(out[col], dayfirst=True, errors="coerce").dt.strftime("%d/%m/%Y")
             except Exception:

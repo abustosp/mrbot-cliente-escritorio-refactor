@@ -9,7 +9,13 @@ from tkinter import filedialog, messagebox, ttk
 from mrbot_app.files import open_with_default_app
 from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, safe_post
 from mrbot_app.windows.base import BaseWindow
-from mrbot_app.windows.minio_helpers import build_link, collect_minio_links, download_links, prepare_download_dir
+from mrbot_app.windows.minio_helpers import (
+    build_link,
+    collect_minio_links,
+    download_links,
+    prepare_download_dir,
+    sanitize_identifier,
+)
 
 
 class DeclaracionEnLineaWindow(BaseWindow):
@@ -119,11 +125,7 @@ class DeclaracionEnLineaWindow(BaseWindow):
     def append_log(self, text: str) -> None:
         if not text:
             return
-        self.log_text.configure(state="normal")
-        self.log_text.insert(tk.END, text)
-        self.log_text.see(tk.END)
-        self.log_text.configure(state="disabled")
-        self.log_text.update_idletasks()
+        self.log_message(text)
 
     def _filter_procesar(self, df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
         if df is None:
@@ -162,13 +164,103 @@ class DeclaracionEnLineaWindow(BaseWindow):
             links = collect_minio_links(data, "ddjj")
         return links
 
+    def _json_filename_from_item(
+        self,
+        item: Dict[str, Any],
+        index: int,
+        header: Dict[str, Any],
+        cuit_repr: str,
+    ) -> str:
+        for key in ("link_minio_ddjj_excel", "link_minio_dj", "link_minio_vep"):
+            url = item.get(key)
+            if isinstance(url, str) and url.strip():
+                link = build_link(url, None, "ddjj", index)
+                if link:
+                    base = os.path.splitext(link["filename"])[0]
+                    return f"{base}.json"
+        periodo = None
+        datos = item.get("datos")
+        if isinstance(datos, dict):
+            periodo = datos.get("periodo")
+            if not periodo:
+                datos_base = datos.get("datos")
+                if isinstance(datos_base, dict):
+                    periodo = datos_base.get("Mes - Año")
+        cuit = cuit_repr
+        if not cuit and isinstance(header, dict):
+            representado = header.get("Representado")
+            if isinstance(representado, dict):
+                cuit = representado.get("cuit")
+        parts = ["ddjj"]
+        if cuit:
+            parts.append(str(cuit))
+        if periodo:
+            parts.append(str(periodo))
+        parts.append(str(index))
+        name = "_".join(sanitize_identifier(p) for p in parts if p)
+        return f"{name}.json" if name else f"ddjj_{index}.json"
+
+    def _json_fallback_name(self, header: Dict[str, Any], cuit_repr: str) -> str:
+        periodo = None
+        if isinstance(header, dict):
+            periodo_info = header.get("Periodo")
+            if isinstance(periodo_info, dict):
+                periodo = periodo_info.get("periodo") or periodo_info.get("desde") or periodo_info.get("hasta")
+        parts = ["ddjj"]
+        if cuit_repr:
+            parts.append(str(cuit_repr))
+        if periodo:
+            parts.append(str(periodo))
+        name = "_".join(sanitize_identifier(p) for p in parts if p)
+        return f"{name}.json" if name else "ddjj.json"
+
+    def _save_json_from_data(self, data: Any, download_dir: Optional[str], cuit_repr: str) -> tuple[int, List[str]]:
+        if not download_dir:
+            return 0, ["No hay ruta de descarga disponible."]
+        if not isinstance(data, dict) or not data:
+            return 0, []
+        header = data.get("header") if isinstance(data.get("header"), dict) else {}
+        archivos = data.get("archivos")
+        saved = 0
+        errors: List[str] = []
+        if isinstance(archivos, list) and archivos:
+            for idx, item in enumerate(archivos, start=1):
+                if not isinstance(item, dict):
+                    continue
+                payload = item.get("datos")
+                if not isinstance(payload, dict) or not payload:
+                    continue
+                filename = self._json_filename_from_item(item, idx, header, cuit_repr)
+                target = os.path.join(download_dir, filename)
+                try:
+                    with open(target, "w", encoding="utf-8") as fh:
+                        json.dump(
+                            {"header": header, "declaracion": payload},
+                            fh,
+                            ensure_ascii=False,
+                            indent=2,
+                        )
+                    saved += 1
+                except Exception as exc:
+                    errors.append(f"{filename}: {exc}")
+            if saved or errors:
+                return saved, errors
+        fallback_name = self._json_fallback_name(header, cuit_repr)
+        try:
+            with open(os.path.join(download_dir, fallback_name), "w", encoding="utf-8") as fh:
+                json.dump(data, fh, ensure_ascii=False, indent=2)
+            saved += 1
+        except Exception as exc:
+            errors.append(f"{fallback_name}: {exc}")
+        return saved, errors
+
     def _download_from_data(self, data: Any, desired_dir: str, cuit_repr: str) -> tuple[int, List[str], Optional[str]]:
-        links = self._extract_links(data)
-        if not links:
-            return 0, [], None
         download_dir, dir_msgs = prepare_download_dir(self.MODULE_DIR, desired_dir, cuit_repr)
         for msg in dir_msgs:
-            self.append_log(msg + "\n")
+            self.log_info(msg)
+        links = self._extract_links(data)
+        if not links:
+            return 0, [], download_dir
         downloads, errors = download_links(links, download_dir)
         return downloads, errors, download_dir
 
@@ -190,18 +282,25 @@ class DeclaracionEnLineaWindow(BaseWindow):
         self.clear_logs()
         safe_payload = dict(payload)
         safe_payload["clave_representante"] = "***"
-        self.append_log(f"Consulta individual Declaracion en Linea: {json.dumps(safe_payload, ensure_ascii=False)}\n")
+        self.log_start("Declaracion en Linea", {"modo": "individual"})
+        self.log_separator(cuit_repr or payload["cuit_representante"])
+        self.log_request(safe_payload)
         resp = safe_post(url, headers, payload)
         data = resp.get("data", {})
-        self.append_log(f"Respuesta HTTP {resp.get('http_status')}: {json.dumps(data, ensure_ascii=False)}\n")
+        self.log_response(resp.get("http_status"), data)
         cuit_folder = cuit_repr or payload["cuit_representante"]
         downloads, errors, download_dir = self._download_from_data(data, self.download_dir_var.get(), cuit_folder)
         if downloads:
-            self.append_log(f"Descargas completadas: {downloads} -> {download_dir}\n")
+            self.log_info(f"Descargas completadas: {downloads} -> {download_dir}")
         elif data:
-            self.append_log("Sin links de descarga en la respuesta.\n")
+            self.log_info("Sin links de descarga en la respuesta.")
         for err in errors:
-            self.append_log(f"Error de descarga: {err}\n")
+            self.log_error(f"Descarga: {err}")
+        json_saved, json_errors = self._save_json_from_data(data, download_dir, cuit_folder)
+        if json_saved:
+            self.log_info(f"JSON guardados: {json_saved} -> {download_dir}")
+        for err in json_errors:
+            self.log_error(f"JSON: {err}")
         self.set_preview(self.result_box, json.dumps(resp, indent=2, ensure_ascii=False))
 
     def procesar_excel(self) -> None:
@@ -220,13 +319,14 @@ class DeclaracionEnLineaWindow(BaseWindow):
             return
 
         self.clear_logs()
-        self.append_log(f"Procesando {len(df_to_process)} filas Declaracion en Linea\n")
+        self.log_start("Declaracion en Linea", {"modo": "masivo", "filas": len(df_to_process)})
         total = len(df_to_process)
         self.set_progress(0, total)
         for idx, (_, row) in enumerate(df_to_process.iterrows(), start=1):
             cuit_rep = str(row.get("cuit_representante", "")).strip()
             cuit_repr = self._optional_value(str(row.get("cuit_representado", "")))
             row_download = str(row.get("ubicacion_descarga") or row.get("path_descarga") or row.get("carpeta_descarga") or "").strip()
+            self.log_separator(cuit_repr or cuit_rep)
             payload = {
                 "cuit_representante": cuit_rep,
                 "clave_representante": str(row.get("clave_representante", "")),
@@ -239,18 +339,23 @@ class DeclaracionEnLineaWindow(BaseWindow):
             }
             safe_payload = dict(payload)
             safe_payload["clave_representante"] = "***"
-            self.append_log(f"- Fila {cuit_repr or cuit_rep}: payload {json.dumps(safe_payload, ensure_ascii=False)}\n")
+            self.log_request(safe_payload)
             resp = safe_post(url, headers, payload)
             data = resp.get("data", {})
-            self.append_log(f"  -> HTTP {resp.get('http_status')}: {json.dumps(data, ensure_ascii=False)}\n")
+            self.log_response(resp.get("http_status"), data)
             cuit_folder = cuit_repr or cuit_rep
             downloads, errors, download_dir = self._download_from_data(data, row_download or self.download_dir_var.get(), cuit_folder)
             if downloads:
-                self.append_log(f"    Descargas completadas: {downloads} -> {download_dir}\n")
+                self.log_info(f"Descargas completadas: {downloads} -> {download_dir}")
             elif data:
-                self.append_log("    Sin links de descarga\n")
+                self.log_info("Sin links de descarga")
             for err in errors:
-                self.append_log(f"    Error de descarga: {err}\n")
+                self.log_error(f"Descarga: {err}")
+            json_saved, json_errors = self._save_json_from_data(data, download_dir, cuit_folder)
+            if json_saved:
+                self.log_info(f"JSON guardados: {json_saved} -> {download_dir}")
+            for err in json_errors:
+                self.log_error(f"JSON: {err}")
             rows.append(
                 {
                     "cuit_representado": cuit_folder,

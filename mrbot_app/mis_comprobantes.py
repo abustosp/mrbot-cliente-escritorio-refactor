@@ -61,6 +61,49 @@ def _sanitize_path_fragment(text: str, fallback: str = "descarga") -> str:
     return clean or fallback
 
 
+def _log_message(message: str, log_fn: Optional[Callable[[str], None]] = None) -> None:
+    if log_fn:
+        log_fn(message)
+        return
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lines = str(message).splitlines() or [""]
+    formatted = "\n".join(
+        f"[{timestamp}] {line}" if line else f"[{timestamp}]"
+        for line in lines
+    )
+    print(formatted)
+
+
+def _log_info(message: str, log_fn: Optional[Callable[[str], None]] = None) -> None:
+    _log_message(f"INFO: {message}", log_fn)
+
+
+def _log_error(message: str, log_fn: Optional[Callable[[str], None]] = None) -> None:
+    _log_message(f"ERROR: {message}", log_fn)
+
+
+def _log_request(payload: Any, log_fn: Optional[Callable[[str], None]] = None) -> None:
+    serialized = json.dumps(payload, ensure_ascii=False, default=str)
+    _log_message(f"REQUEST: {serialized}", log_fn)
+
+
+def _log_response(http_status: Any, payload: Any, log_fn: Optional[Callable[[str], None]] = None) -> None:
+    serialized = json.dumps(payload, ensure_ascii=False, default=str)
+    _log_message(f"RESPONSE: HTTP {http_status} - {serialized}", log_fn)
+
+
+def _log_start(title: str, details: Optional[Dict[str, Any]] = None, log_fn: Optional[Callable[[str], None]] = None) -> None:
+    detail_text = ""
+    if details:
+        detail_text = " | " + json.dumps(details, ensure_ascii=False, default=str)
+    _log_message(f"INICIADOR: {title}{detail_text}", log_fn)
+
+
+def _log_separator(label: str, log_fn: Optional[Callable[[str], None]] = None) -> None:
+    sep = "-" * 60
+    _log_message(f"{sep}\nCONTRIBUYENTE: {label}\n{sep}", log_fn)
+
+
 def consulta_mc(
     desde,
     hasta,
@@ -75,6 +118,7 @@ def consulta_mc(
     b64: bool = False,
     carga_s3: bool = False,
     proxy_request: Optional[bool] = None,
+    log_fn: Optional[Callable[[str], None]] = None,
 ):
     """
     Consulta de Mis Comprobantes usando la API v1.
@@ -93,6 +137,7 @@ def consulta_mc(
         b64: True para recibir archivos en base64
         carga_s3: True para subir archivos a S3
         proxy_request: True/False/None para usar proxy
+        log_fn: Funcion opcional para registrar logs (UI/CLI)
 
     Returns:
         Dict con la respuesta de la API
@@ -123,20 +168,29 @@ def consulta_mc(
     if proxy_request is not None:
         payload["proxy_request"] = proxy_request
 
-    debug_payload = {k: v for k, v in payload.items() if k != "contrasena"}
-    print(f"📤 Request payload: carga_minio={payload['carga_minio']}, carga_json={payload['carga_json']}")
+    safe_payload = dict(payload)
+    if "contrasena" in safe_payload:
+        safe_payload["contrasena"] = "***"
+    _log_request(safe_payload, log_fn)
 
     response = requests.post(url, headers=headers, json=payload)
+    http_status = response.status_code
 
     try:
-        return response.json()
+        data = response.json()
     except ValueError:
-        return {
+        data = {
             "success": False,
             "error": f"Respuesta no JSON (HTTP {response.status_code})",
             "http_status": response.status_code,
             "content": response.text[:500],
         }
+        _log_error(f"Respuesta no JSON (HTTP {response.status_code})", log_fn)
+        _log_response(http_status, data, log_fn)
+        return data
+
+    _log_response(http_status, data, log_fn)
+    return data
 
 
 def save_to_csv(data, filename):
@@ -149,7 +203,7 @@ def save_to_csv(data, filename):
             writer.writerows(data)
 
 
-def leer_csv_con_encoding(archivo):
+def leer_csv_con_encoding(archivo, log_fn: Optional[Callable[[str], None]] = None):
     """
     Intenta leer un archivo CSV con diferentes encodings.
     Primero intenta cp1252, luego utf-8.
@@ -163,7 +217,7 @@ def leer_csv_con_encoding(archivo):
         except UnicodeDecodeError:
             continue
         except Exception as e:
-            print(f"⚠ Error al leer archivo con encoding {encoding}: {e}")
+            _log_info(f"Advertencia: no se pudo leer archivo con encoding {encoding}: {e}", log_fn)
             continue
 
     raise ValueError(
@@ -171,7 +225,7 @@ def leer_csv_con_encoding(archivo):
     )
 
 
-def extraer_csv_de_zip(zip_path, destino_csv):
+def extraer_csv_de_zip(zip_path, destino_csv, log_fn: Optional[Callable[[str], None]] = None):
     """
     Extrae el único archivo CSV de un ZIP y lo guarda con el nombre especificado.
 
@@ -187,7 +241,7 @@ def extraer_csv_de_zip(zip_path, destino_csv):
             archivos_en_zip = zip_ref.namelist()
 
             if not archivos_en_zip:
-                print(f"⚠ El ZIP {zip_path} está vacío")
+                _log_error(f"El ZIP {zip_path} esta vacio", log_fn)
                 return False
 
             archivo_csv = None
@@ -205,14 +259,14 @@ def extraer_csv_de_zip(zip_path, destino_csv):
             with open(destino_csv, "wb") as f:
                 f.write(contenido)
 
-            print(f"✓ Extraído: {os.path.basename(destino_csv)}")
+            _log_info(f"Extraido: {os.path.basename(destino_csv)}", log_fn)
             return True
 
     except zipfile.BadZipFile:
-        print(f"✗ Error: {zip_path} no es un archivo ZIP válido")
+        _log_error(f"{zip_path} no es un archivo ZIP valido", log_fn)
         return False
     except Exception as e:
-        print(f"✗ Error al extraer ZIP: {e}")
+        _log_error(f"Error al extraer ZIP: {e}", log_fn)
         return False
 
 
@@ -222,6 +276,7 @@ def crear_directorio_seguro(
     representado_cuit: Optional[str] = None,
     nombre_archivo: Optional[str] = None,
     cuit_representante: Optional[str] = None,
+    log_fn: Optional[Callable[[str], None]] = None,
 ):
     """
     Intenta crear un directorio. Si falla, retorna una ruta alternativa.
@@ -244,7 +299,7 @@ def crear_directorio_seguro(
                 with open(test_file, "w") as f:
                     f.write("test")
                 os.remove(test_file)
-                print(f"✓ Directorio verificado: {ruta_deseada}")
+                _log_info(f"Directorio verificado: {ruta_deseada}", log_fn)
                 return ruta_deseada
             except Exception:
                 raise PermissionError(f"No se puede escribir en {ruta_deseada}")
@@ -256,17 +311,22 @@ def crear_directorio_seguro(
         fallback_dir = os.path.join(FALLBACK_BASE_DIR, cuit_limpio, nombre_limpio)
         try:
             os.makedirs(fallback_dir, exist_ok=True)
-            print(f"⚠ No se pudo usar {ruta}: {e}")
-            print(f"✓ Usando directorio alternativo: {fallback_dir}")
+            _log_info(f"Advertencia: no se pudo usar {ruta}: {e}", log_fn)
+            _log_info(f"Usando directorio alternativo: {fallback_dir}", log_fn)
             return fallback_dir
         except Exception as e2:
-            print(f"✗ Error creando directorio fallback: {e2}")
+            _log_error(f"Error creando directorio fallback: {e2}", log_fn)
             os.makedirs("Descargas", exist_ok=True)
-            print("✓ Usando directorio por defecto: ./Descargas")
+            _log_info("Usando directorio por defecto: ./Descargas", log_fn)
             return "Descargas"
 
 
-def consulta_mc_csv(excel_path: Optional[str] = None, progress_callback: Optional[Callable[[int, int], None]] = None):
+def consulta_mc_csv(
+    excel_path: Optional[str] = None,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
+    log_fn: Optional[Callable[[str], None]] = None,
+    log_start: bool = True,
+):
     """
     Procesa el archivo Excel (o CSV legacy) de consultas masivas de Mis Comprobantes.
 
@@ -280,6 +340,8 @@ def consulta_mc_csv(excel_path: Optional[str] = None, progress_callback: Optiona
     Args:
         excel_path: Ruta opcional al Excel a procesar (por ejemplo, './ejemplos_api/mis_comprobantes.xlsx').
         progress_callback: Funcion opcional que recibe (current, total) para actualizar progreso.
+        log_fn: Funcion opcional para registrar logs (UI/CLI).
+        log_start: True para emitir un iniciador de proceso.
 
     El archivo Excel se lee con pandas. Si no existe, se intenta usar el CSV con cp1252 y luego utf-8.
     """
@@ -319,47 +381,51 @@ def consulta_mc_csv(excel_path: Optional[str] = None, progress_callback: Optiona
             df.columns = [_normalize_key(c) for c in df.columns]
             datos = df.to_dict(orient="records")
             origen = candidate
-            print(f"✓ Excel leído correctamente: {candidate}")
+            _log_info(f"Excel leido correctamente: {candidate}", log_fn)
             break
         except Exception as e:
-            print(f"✗ Error al leer Excel '{candidate}': {e}")
+            _log_error(f"No se pudo leer Excel '{candidate}': {e}", log_fn)
 
     if not datos:
         try:
             with open(csv_path, "r", encoding="cp1252") as f:
                 datos = [_normalize_row_keys(row) for row in csv.DictReader(f, delimiter="|")]
-            print("✓ CSV leído con encoding cp1252 (modo compatibilidad)")
+            _log_info("CSV leido con encoding cp1252 (modo compatibilidad)", log_fn)
         except UnicodeDecodeError:
             try:
                 with open(csv_path, "r", encoding="utf-8") as f:
                     datos = [_normalize_row_keys(row) for row in csv.DictReader(f, delimiter="|")]
-                print("✓ CSV leído con encoding utf-8 (modo compatibilidad)")
+                _log_info("CSV leido con encoding utf-8 (modo compatibilidad)", log_fn)
             except Exception as e:
-                print(f"✗ Error al leer CSV: {e}")
+                _log_error(f"Error al leer CSV: {e}", log_fn)
                 return
         except FileNotFoundError:
-            print(
-                f"✗ Error: No se encontró el archivo '{excel_default}' ni el CSV de respaldo '{csv_path}'. "
-                f"También se intentó '{excel_example}'."
+            _log_error(
+                f"No se encontro el archivo '{excel_default}' ni el CSV de respaldo '{csv_path}'. "
+                f"Tambien se intento '{excel_example}'.",
+                log_fn,
             )
             return
         except Exception as e:
-            print(f"✗ Error al leer CSV: {e}")
+            _log_error(f"Error al leer CSV: {e}", log_fn)
             return
 
     datos_normalizados = [{k: _to_str(v) for k, v in _normalize_row_keys(dato).items()} for dato in datos]
 
     if not datos_normalizados:
-        print("⚠ El archivo de configuración no contiene filas para procesar")
+        _log_info("El archivo de configuracion no contiene filas para procesar", log_fn)
         if progress_callback:
             progress_callback(0, 0)
         return
 
     filas_a_procesar = [dato for dato in datos_normalizados if _to_bool(dato.get("procesar", ""), default=False)]
     if not filas_a_procesar:
-        print("⚠ El archivo de configuración no contiene filas para procesar")
+        _log_info("El archivo de configuracion no contiene filas para procesar", log_fn)
 
     total_filas = len(filas_a_procesar)
+    if log_start:
+        source = origen or excel_path or excel_default
+        _log_start("Mis Comprobantes", {"modo": "masivo", "archivo": source, "filas": total_filas}, log_fn)
     if progress_callback:
         progress_callback(0, total_filas)
 
@@ -395,10 +461,14 @@ def consulta_mc_csv(excel_path: Optional[str] = None, progress_callback: Optiona
         descarga_emitidos = _to_bool(dato.get("descarga_emitidos", ""), default=False)
         descarga_recibidos = _to_bool(dato.get("descarga_recibidos", ""), default=False)
 
-        print(f"\n{'='*60}")
-        print(f"Procesando: {representado_nombre} ({representado_cuit})")
-        print(f"Período: {desde} - {hasta}")
-        print(f"{'='*60}")
+        label = f"{representado_nombre} ({representado_cuit})" if representado_cuit else representado_nombre
+        _log_separator(label, log_fn)
+        _log_info(f"Periodo: {desde} - {hasta}", log_fn)
+        _log_info(f"CUIT inicio sesion: {cuit_inicio_sesion}", log_fn)
+        _log_info(
+            f"Descarga emitidos: {descarga_emitidos} | Descarga recibidos: {descarga_recibidos}",
+            log_fn,
+        )
 
         try:
             response = consulta_mc(
@@ -412,6 +482,7 @@ def consulta_mc_csv(excel_path: Optional[str] = None, progress_callback: Optiona
                 descarga_recibidos,
                 carga_minio=True,
                 carga_json=False,
+                log_fn=log_fn,
             )
 
             if not response.get("success", False):
@@ -430,7 +501,7 @@ def consulta_mc_csv(excel_path: Optional[str] = None, progress_callback: Optiona
                         "error": str(error_msg),
                     }
                 )
-                print(f"✗ Error FATAL en la consulta: {error_msg}")
+                _log_error(f"Error en la consulta: {error_msg}", log_fn)
                 if progress_callback:
                     progress_callback(idx, total_filas)
                 continue
@@ -438,11 +509,11 @@ def consulta_mc_csv(excel_path: Optional[str] = None, progress_callback: Optiona
             if "error" in response and response["error"]:
                 error_list = response["error"]
                 if isinstance(error_list, list) and error_list:
-                    print(f"⚠ Advertencia(s): {', '.join(error_list)}")
+                    _log_info(f"Advertencia(s): {', '.join(error_list)}", log_fn)
                 elif error_list:
-                    print(f"⚠ Advertencia: {error_list}")
+                    _log_info(f"Advertencia: {error_list}", log_fn)
 
-            print(f"\n📋 Claves en response: {list(response.keys())}")
+            _log_info(f"Claves en response: {list(response.keys())}", log_fn)
 
             archivos_a_descargar = []
             archivos_info = []
@@ -457,17 +528,19 @@ def consulta_mc_csv(excel_path: Optional[str] = None, progress_callback: Optiona
                     representado_cuit=representado_cuit,
                     nombre_archivo=nombre_emitidos,
                     cuit_representante=cuit_inicio_sesion,
+                    log_fn=log_fn,
                 )
-                print(f"   Carpeta emitidos: {ubicacion_emitidos}")
+                _log_info(f"Carpeta emitidos: {ubicacion_emitidos}", log_fn)
 
-                print("\n🔍 Emitidos - Verificando campo MinIO...")
-                print(
-                    "   Campo 'mis_comprobantes_emitidos_url_minio' existe: "
-                    f"{'mis_comprobantes_emitidos_url_minio' in response}"
+                _log_info("Emitidos: verificando campo MinIO", log_fn)
+                _log_info(
+                    "Campo 'mis_comprobantes_emitidos_url_minio' existe: "
+                    f"{'mis_comprobantes_emitidos_url_minio' in response}",
+                    log_fn,
                 )
                 if "mis_comprobantes_emitidos_url_minio" in response:
                     url = response["mis_comprobantes_emitidos_url_minio"]
-                    print(f"   URL: {url[:100] if url else 'None'}...")
+                    _log_info(f"URL: {url[:100] if url else 'None'}...", log_fn)
 
                 if "mis_comprobantes_emitidos_url_minio" in response and response["mis_comprobantes_emitidos_url_minio"]:
                     zip_path = os.path.join(ubicacion_emitidos, f"{nombre_emitidos}_temp.zip")
@@ -487,9 +560,9 @@ def consulta_mc_csv(excel_path: Optional[str] = None, progress_callback: Optiona
                             "tipo": "emitidos",
                         }
                     )
-                    print("   ✓ Agregado a lista de descarga")
+                    _log_info("Agregado a lista de descarga", log_fn)
                 else:
-                    print("   ✗ No hay URL de MinIO para emitidos")
+                    _log_info("No hay URL de MinIO para emitidos", log_fn)
 
             if descarga_recibidos:
                 ubicacion_deseada = _to_str(dato.get("ubicacion_recibidos", ""))
@@ -501,17 +574,19 @@ def consulta_mc_csv(excel_path: Optional[str] = None, progress_callback: Optiona
                     representado_cuit=representado_cuit,
                     nombre_archivo=nombre_recibidos,
                     cuit_representante=cuit_inicio_sesion,
+                    log_fn=log_fn,
                 )
-                print(f"   Carpeta recibidos: {ubicacion_recibidos}")
+                _log_info(f"Carpeta recibidos: {ubicacion_recibidos}", log_fn)
 
-                print("\n🔍 Recibidos - Verificando campo MinIO...")
-                print(
-                    "   Campo 'mis_comprobantes_recibidos_url_minio' existe: "
-                    f"{'mis_comprobantes_recibidos_url_minio' in response}"
+                _log_info("Recibidos: verificando campo MinIO", log_fn)
+                _log_info(
+                    "Campo 'mis_comprobantes_recibidos_url_minio' existe: "
+                    f"{'mis_comprobantes_recibidos_url_minio' in response}",
+                    log_fn,
                 )
                 if "mis_comprobantes_recibidos_url_minio" in response:
                     url = response["mis_comprobantes_recibidos_url_minio"]
-                    print(f"   URL: {url[:100] if url else 'None'}...")
+                    _log_info(f"URL: {url[:100] if url else 'None'}...", log_fn)
 
                 if "mis_comprobantes_recibidos_url_minio" in response and response["mis_comprobantes_recibidos_url_minio"]:
                     zip_path = os.path.join(ubicacion_recibidos, f"{nombre_recibidos}_temp.zip")
@@ -531,57 +606,55 @@ def consulta_mc_csv(excel_path: Optional[str] = None, progress_callback: Optiona
                             "tipo": "recibidos",
                         }
                     )
-                    print("   ✓ Agregado a lista de descarga")
+                    _log_info("Agregado a lista de descarga", log_fn)
                 else:
-                    print("   ✗ No hay URL de MinIO para recibidos")
+                    _log_info("No hay URL de MinIO para recibidos", log_fn)
 
             if archivos_a_descargar:
-                print(f"\nDescargando {len(archivos_a_descargar)} archivo(s) desde MinIO...")
-                resultados_descarga = descargar_archivos_minio_concurrente(archivos_a_descargar)
+                _log_info(f"Descargando {len(archivos_a_descargar)} archivo(s) desde MinIO...", log_fn)
+                resultados_descarga = descargar_archivos_minio_concurrente(archivos_a_descargar, log_fn=log_fn)
 
-                print("Extrayendo archivos CSV de los ZIPs...")
+                _log_info("Extrayendo archivos CSV de los ZIPs...", log_fn)
                 for info in archivos_info:
                     if os.path.exists(info["zip"]):
-                        if extraer_csv_de_zip(info["zip"], info["csv"]):
+                        if extraer_csv_de_zip(info["zip"], info["csv"], log_fn=log_fn):
                             try:
                                 os.remove(info["zip"])
                             except Exception:
                                 pass
                         else:
-                            print(f"✗ No se pudo extraer {info['tipo']}")
+                            _log_error(f"No se pudo extraer {info['tipo']}", log_fn)
                     else:
-                        print(f"✗ No se descargó el ZIP para {info['tipo']}")
+                        _log_error(f"No se descargo el ZIP para {info['tipo']}", log_fn)
 
                 exitosos = sum(1 for r in resultados_descarga if r["success"])
                 fallidos = len(resultados_descarga) - exitosos
-                print(f"Descargas completadas: {exitosos} exitosas, {fallidos} fallidas")
+                _log_info(f"Descargas completadas: {exitosos} exitosas, {fallidos} fallidas", log_fn)
             else:
-                print("⚠ No hay archivos de MinIO para descargar")
+                _log_info("No hay archivos de MinIO para descargar", log_fn)
 
-            print(f"✓ Procesamiento completado para {representado_nombre}")
+            _log_info(f"Procesamiento completado para {representado_nombre}", log_fn)
             if progress_callback:
                 progress_callback(idx, total_filas)
 
         except Exception as e:
             error_msg = f"Error en {representado_nombre} - {representado_cuit}: {str(e)}"
             errores.append(error_msg)
-            print(f"✗ {error_msg}")
+            _log_error(error_msg, log_fn)
             if progress_callback:
                 progress_callback(idx, total_filas)
 
     if errores:
         with open("errores.txt", "w", encoding="utf-8") as f:
             f.write("\n".join(errores))
-        print(f"\n⚠ Se registraron {len(errores)} errores en errores.txt")
+        _log_info(f"Se registraron {len(errores)} errores en errores.txt", log_fn)
 
     if errores2:
         with open("errores.json", "w", encoding="utf-8") as f:
             json.dump(errores2, f, ensure_ascii=False, indent=2)
-        print(f"⚠ Se registraron {len(errores2)} errores de API en errores.json")
+        _log_info(f"Se registraron {len(errores2)} errores de API en errores.json", log_fn)
 
-    print(f"\n{'='*60}")
-    print("Procesamiento masivo finalizado")
-    print(f"{'='*60}")
+    _log_message(f"{'-' * 60}\nProcesamiento masivo finalizado\n{'-' * 60}", log_fn)
 
     try:
         from tkinter import messagebox

@@ -126,11 +126,7 @@ class SctWindow(BaseWindow):
         if not text:
             return
         formatted = self._format_log_line(text, prefix, style)
-        self.log_text.configure(state="normal")
-        self.log_text.insert(tk.END, formatted)
-        self.log_text.see(tk.END)
-        self.log_text.configure(state="disabled")
-        self.log_text.update_idletasks()
+        self.log_message(formatted)
 
     def _redact(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         safe = dict(payload)
@@ -343,10 +339,11 @@ class SctWindow(BaseWindow):
         payload.update(outputs)
         url = ensure_trailing_slash(base_url) + "api/v1/sct/consulta"
         self.clear_logs()
-        self.append_log("Consulta individual SCT", style="header")
-        self.append_log(f"Payload: {json.dumps(self._redact(payload), ensure_ascii=False)}", style="bullet")
+        self.log_start("SCT", {"modo": "individual"})
+        self.log_separator(payload["cuit_representado"])
+        self.log_request(self._redact(payload))
         resp = safe_post(url, headers, payload)
-        self.append_log(f"HTTP {resp.get('http_status')}: {json.dumps(resp.get('data'), ensure_ascii=False)}", style="section")
+        self.log_response(resp.get("http_status"), resp.get("data"))
         self.set_preview(self.result_box, json.dumps(resp, indent=2, ensure_ascii=False))
 
     def cargar_excel(self) -> None:
@@ -386,7 +383,7 @@ class SctWindow(BaseWindow):
             return
 
         self.clear_logs()
-        self.append_log(f"Procesando {len(df_to_process)} filas SCT", style="header")
+        self.log_start("SCT", {"modo": "masivo", "filas": len(df_to_process)})
         total = len(df_to_process)
         self.set_progress(0, total)
         for idx, (_, row) in enumerate(df_to_process.iterrows(), start=1):
@@ -402,6 +399,8 @@ class SctWindow(BaseWindow):
             excel_fmt, csv_fmt, pdf_fmt = self._row_format_flags(row, prefer_row=True)
             outputs, has_outputs = self.build_output_flags(include_deuda, include_venc, include_ddjj, excel_fmt, csv_fmt, pdf_fmt)
             if not has_outputs:
+                self.log_separator(str(row.get("cuit_representado", "")).strip())
+                self.log_error("Sin formato de salida seleccionado para esta fila")
                 rows.append(
                     {
                         "cuit_representado": str(row.get("cuit_representado", "")).strip(),
@@ -436,12 +435,13 @@ class SctWindow(BaseWindow):
                 "proxy_request": bool(self.opt_proxy.get()),
             }
             payload.update(outputs)
-            self.append_log(f"Fila {payload['cuit_representado']}", style="section")
-            self.append_log(f"Bloques activos -> deuda={include_deuda}, vencimientos={include_venc}, ddjj={include_ddjj}", style="bullet")
-            self.append_log(f"Salidas solicitadas -> {json.dumps(outputs, ensure_ascii=False)}", style="bullet")
+            self.log_separator(payload["cuit_representado"])
+            self.log_info(f"Bloques activos -> deuda={include_deuda}, vencimientos={include_venc}, ddjj={include_ddjj}")
+            self.log_info(f"Salidas solicitadas -> {json.dumps(outputs, ensure_ascii=False)}")
+            self.log_request(self._redact(payload))
             resp = safe_post(url, headers, payload)
             data = resp.get("data", {})
-            self.append_log(f"HTTP {resp.get('http_status')}: {json.dumps(data, ensure_ascii=False)}", style="bullet")
+            self.log_response(resp.get("http_status"), data)
             downloads = 0
             download_errors: List[str] = []
             if isinstance(data, dict):
@@ -449,9 +449,9 @@ class SctWindow(BaseWindow):
                     data, outputs, block_config, payload["cuit_representado"], payload["cuit_login"]
                 )
             if downloads:
-                self.append_log(f"Descargas completadas: {downloads}", style="success")
+                self.log_info(f"Descargas completadas: {downloads}")
             for err in download_errors:
-                self.append_log(f"Descarga con error: {err}", style="error")
+                self.log_error(f"Descarga: {err}")
             rows.append(
                 {
                     "cuit_representado": payload["cuit_representado"],

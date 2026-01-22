@@ -132,11 +132,7 @@ class RcelWindow(BaseWindow):
     def append_log(self, text: str) -> None:
         if not text:
             return
-        self.log_text.configure(state="normal")
-        self.log_text.insert(tk.END, text)
-        self.log_text.see(tk.END)
-        self.log_text.configure(state="disabled")
-        self.log_text.update_idletasks()
+        self.log_message(text)
 
     def _sanitize_identifier(self, value: str, fallback: str = "desconocido") -> str:
         cleaned = re.sub(r"[^0-9A-Za-z._-]", "_", (value or "").strip())
@@ -255,10 +251,12 @@ class RcelWindow(BaseWindow):
         }
         url = ensure_trailing_slash(base_url) + "api/v1/rcel/consulta"
         self.clear_logs()
-        self.append_log(f"Consulta individual RCEL: {json.dumps(self._redact(payload), ensure_ascii=False)}\n")
+        self.log_start("RCEL", {"modo": "individual"})
+        self.log_separator(payload["representado_cuit"])
+        self.log_request(self._redact(payload))
         resp = safe_post(url, headers, payload)
         data = resp.get("data")
-        self.append_log(f"Respuesta HTTP {resp.get('http_status')}: {json.dumps(data, ensure_ascii=False)}\n")
+        self.log_response(resp.get("http_status"), data)
         downloads = 0
         download_errors: List[str] = []
         download_dir: Optional[str] = None
@@ -267,17 +265,17 @@ class RcelWindow(BaseWindow):
             if links:
                 download_dir, dir_msgs = self._prepare_download_dir(self.download_dir_var.get(), payload["representado_cuit"])
                 for msg in dir_msgs:
-                    self.append_log(msg + "\n")
+                    self.log_info(msg)
                 if download_dir:
                     downloads, download_errors = self._download_pdfs(links, download_dir)
                     if downloads:
-                        self.append_log(f"Descargas completadas ({downloads}) en {download_dir}\n")
+                        self.log_info(f"Descargas completadas ({downloads}) en {download_dir}")
                 else:
                     download_errors.append("No se pudo preparar una carpeta para descargas.")
             else:
-                self.append_log("No se encontraron links de PDF para descargar.\n")
+                self.log_info("No se encontraron links de PDF para descargar.")
         for err in download_errors:
-            self.append_log(f"Error de descarga: {err}\n")
+            self.log_error(f"Descarga: {err}")
         self.set_preview(self.result_box, json.dumps(resp, indent=2, ensure_ascii=False))
 
     def procesar_excel(self) -> None:
@@ -296,7 +294,7 @@ class RcelWindow(BaseWindow):
             return
 
         self.clear_logs()
-        self.append_log(f"Procesando {len(df_to_process)} filas RCEL\n")
+        self.log_start("RCEL", {"modo": "masivo", "filas": len(df_to_process)})
         total = len(df_to_process)
         self.set_progress(0, total)
         for idx, (_, row) in enumerate(df_to_process.iterrows(), start=1):
@@ -308,6 +306,7 @@ class RcelWindow(BaseWindow):
                 or row.get("carpeta_descarga")
                 or ""
             ).strip()
+            self.log_separator(str(row.get("representado_cuit", "")).strip())
             payload = {
                 "desde": desde,
                 "hasta": hasta,
@@ -318,10 +317,10 @@ class RcelWindow(BaseWindow):
                 "b64_pdf": bool(self.b64_var.get()),
                 "minio_upload": bool(self.minio_var.get()),
             }
-            self.append_log(f"- Fila {payload['representado_cuit']}: payload {json.dumps(self._redact(payload), ensure_ascii=False)}\n")
+            self.log_request(self._redact(payload))
             resp = safe_post(url, headers, payload)
             data = resp.get("data", {})
-            self.append_log(f"  -> HTTP {resp.get('http_status')}: {json.dumps(data, ensure_ascii=False)}\n")
+            self.log_response(resp.get("http_status"), data)
             downloads = 0
             download_errors: List[str] = []
             download_dir_used: Optional[str] = None
@@ -331,17 +330,17 @@ class RcelWindow(BaseWindow):
                     desired_dir = row_download or self.download_dir_var.get()
                     download_dir_used, dir_msgs = self._prepare_download_dir(desired_dir, payload["representado_cuit"])
                     for msg in dir_msgs:
-                        self.append_log(f"    {msg}\n")
+                        self.log_info(msg)
                     if download_dir_used:
                         downloads, download_errors = self._download_pdfs(links, download_dir_used)
                         if downloads:
-                            self.append_log(f"    Descargas completadas: {downloads} -> {download_dir_used}\n")
+                            self.log_info(f"Descargas completadas: {downloads} -> {download_dir_used}")
                     else:
                         download_errors.append("No se pudo preparar una carpeta para descargas.")
                 else:
-                    self.append_log("    Sin links de PDF para descargar\n")
+                    self.log_info("Sin links de PDF para descargar")
             for err in download_errors:
-                self.append_log(f"    Error de descarga: {err}\n")
+                self.log_error(f"Descarga: {err}")
             rows.append(
                 {
                     "representado_cuit": payload["representado_cuit"],

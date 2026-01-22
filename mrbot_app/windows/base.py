@@ -1,7 +1,10 @@
+import json
+import os
+from datetime import datetime
+from typing import Any, Dict, Optional
+
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from typing import Optional
-import os
 
 import pandas as pd
 
@@ -46,6 +49,58 @@ class BaseWindow(tk.Toplevel):
             txt.pack(anchor="w", pady=4, padx=2, fill="both", expand=False)
         txt.configure(state="disabled")
         return txt
+
+    def _append_log_widget(self, text: str) -> None:
+        log_text = getattr(self, "log_text", None)
+        if log_text is None or not text:
+            return
+        log_text.configure(state="normal")
+        log_text.insert(tk.END, text)
+        log_text.see(tk.END)
+        log_text.configure(state="disabled")
+        log_text.update_idletasks()
+
+    def _format_log_message(self, message: str) -> str:
+        if not message:
+            return ""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        lines = str(message).splitlines() or [""]
+        formatted = "\n".join(
+            f"[{timestamp}] {line}" if line else f"[{timestamp}]"
+            for line in lines
+        )
+        return formatted + "\n"
+
+    def _prefix_lines(self, prefix: str, message: str) -> str:
+        lines = str(message).splitlines() or [""]
+        return "\n".join(f"{prefix}{line}" if line else prefix.rstrip() for line in lines)
+
+    def log_message(self, message: str) -> None:
+        self._append_log_widget(self._format_log_message(message))
+
+    def log_info(self, message: str) -> None:
+        self.log_message(self._prefix_lines("INFO: ", message))
+
+    def log_error(self, message: str) -> None:
+        self.log_message(self._prefix_lines("ERROR: ", message))
+
+    def log_request(self, payload: Any, label: str = "REQUEST") -> None:
+        serialized = json.dumps(payload, ensure_ascii=False, default=str)
+        self.log_message(self._prefix_lines(f"{label}: ", serialized))
+
+    def log_response(self, http_status: Any, payload: Any) -> None:
+        serialized = json.dumps(payload, ensure_ascii=False, default=str)
+        self.log_message(self._prefix_lines("RESPONSE: ", f"HTTP {http_status} - {serialized}"))
+
+    def log_start(self, title: str, details: Optional[Dict[str, Any]] = None) -> None:
+        detail_text = ""
+        if details:
+            detail_text = " | " + json.dumps(details, ensure_ascii=False, default=str)
+        self.log_message(f"INICIADOR: {title}{detail_text}")
+
+    def log_separator(self, label: str) -> None:
+        sep = "-" * 60
+        self.log_message(f"{sep}\nCONTRIBUYENTE: {label}\n{sep}")
 
     def add_progress_bar(self, parent, label: str = "Progreso") -> ttk.LabelFrame:
         style = ttk.Style(self)

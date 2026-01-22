@@ -1,5 +1,3 @@
-import contextlib
-import io
 import json
 import os
 from typing import Dict, Optional
@@ -86,26 +84,7 @@ class GuiDescargaMC(BaseWindow):
     def append_log(self, text: str) -> None:
         if not text:
             return
-        self.log_text.configure(state="normal")
-        self.log_text.insert(tk.END, text)
-        self.log_text.see(tk.END)
-        self.log_text.configure(state="disabled")
-        self.log_text.update_idletasks()
-
-    def _create_log_writer(self) -> io.TextIOBase:
-        gui = self
-
-        class _TkTextWriter(io.TextIOBase):
-            def write(self, message: str) -> int:
-                if not message:
-                    return 0
-                gui.append_log(message)
-                return len(message)
-
-            def flush(self) -> None:
-                return
-
-        return _TkTextWriter()
+        self.log_message(text)
 
     def open_example(self) -> None:
         path = self.example_paths.get("mis_comprobantes.xlsx")
@@ -140,13 +119,16 @@ class GuiDescargaMC(BaseWindow):
                 self.processing = True
                 self.clear_logs()
                 self.set_progress(0, 0)
-                self.append_log(f"Iniciando proceso con: {excel_to_use}\n\n")
-                writer = self._create_log_writer()
-                with contextlib.redirect_stdout(writer), contextlib.redirect_stderr(writer):
-                    consulta_mc_csv(excel_to_use, progress_callback=self.set_progress)
+                self.log_start("Mis Comprobantes", {"modo": "masivo", "archivo": excel_to_use})
+                consulta_mc_csv(
+                    excel_to_use,
+                    progress_callback=self.set_progress,
+                    log_fn=self.log_message,
+                    log_start=False,
+                )
                 messagebox.showinfo("Proceso finalizado", f"Consulta finalizada con {excel_to_use}. Revisa los logs en la ventana.")
             except Exception as exc:
                 messagebox.showerror("Error", f"No se pudo ejecutar consulta_mc_csv: {exc}")
-                self.append_log(f"\nError: {exc}\n")
+                self.log_error(str(exc))
             finally:
                 self.processing = False

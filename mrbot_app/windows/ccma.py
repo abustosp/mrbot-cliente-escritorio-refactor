@@ -111,6 +111,11 @@ class CcmaWindow(BaseWindow):
         except Exception as exc:
             messagebox.showerror("Error", f"No se pudo leer el Excel: {exc}")
 
+    def clear_logs(self) -> None:
+        self.log_text.configure(state="normal")
+        self.log_text.delete("1.0", tk.END)
+        self.log_text.configure(state="disabled")
+
     def consulta_individual(self) -> None:
         base_url, api_key, email = self.config_provider()
         headers = build_headers(api_key, email)
@@ -122,7 +127,19 @@ class CcmaWindow(BaseWindow):
             "movimientos": bool(self.opt_movimientos.get()),
         }
         url = ensure_trailing_slash(base_url) + "api/v1/ccma/consulta"
+        self.clear_logs()
+        safe_payload = dict(payload)
+        safe_payload["clave_representante"] = "***"
+        cuit_label = payload["cuit_representado"] or payload["cuit_representante"]
+        self.log_start("CCMA", {"modo": "individual"})
+        self.log_separator(cuit_label)
+        self.log_request(safe_payload)
         resp = safe_post(url, headers, payload)
+        data = resp.get("data")
+        self.log_response(resp.get("http_status"), data)
+        if resp.get("http_status") != 200:
+            detail = resp.get("error") or resp.get("detail") or data
+            self.log_error(f"HTTP {resp.get('http_status')}: {detail}")
         self.set_preview(self.result_box, json.dumps(resp, indent=2, ensure_ascii=False))
 
     def procesar_excel(self) -> None:
@@ -145,6 +162,8 @@ class CcmaWindow(BaseWindow):
             messagebox.showwarning("Sin filas a procesar", "No hay filas marcadas con procesar=SI.")
             return
 
+        self.clear_logs()
+        self.log_start("CCMA", {"modo": "masivo", "filas": len(df_to_process)})
         total = len(df_to_process)
         self.set_progress(0, total)
         for idx, (_, row) in enumerate(df_to_process.iterrows(), start=1):
@@ -159,9 +178,17 @@ class CcmaWindow(BaseWindow):
                 "proxy_request": bool(self.opt_proxy.get()),
                 "movimientos": movimientos_flag
             }
+            safe_payload = dict(payload)
+            safe_payload["clave_representante"] = "***"
+            self.log_separator(cuit_repr or cuit_rep)
+            self.log_request(safe_payload)
             resp = safe_post(url, headers, payload)
             http_status = resp.get("http_status")
             data = resp.get("data")
+            self.log_response(http_status, data)
+            if http_status != 200:
+                detail = resp.get("error") or resp.get("detail") or data
+                self.log_error(f"HTTP {http_status}: {detail}")
             if http_status == 200 and isinstance(data, dict):
                 # Extraer clave "response_ccma" si existe, para replicar ejemplo
                 response_obj = data.get("response_ccma", data)
@@ -243,9 +270,9 @@ class CcmaWindow(BaseWindow):
                 if monto_col in movimientos_df.columns:
                     movimientos_df[monto_col] = movimientos_df[monto_col].apply(_parse_amount)
         # Guardar consolidado en ./descargas/ReporteCCMA.xlsx
+        out_path = os.path.join("descargas", "ReporteCCMA.xlsx")
         try:
             os.makedirs("descargas", exist_ok=True)
-            out_path = os.path.join("descargas", "ReporteCCMA.xlsx")
             with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
                 out_df.to_excel(writer, index=False, sheet_name="CCMA")
                 hojas_creadas = ["CCMA"]
@@ -263,6 +290,7 @@ class CcmaWindow(BaseWindow):
         except Exception as exc:
             messagebox.showerror("Error", f"No se pudo guardar ReporteCCMA.xlsx: {exc}")
             return
+        self.log_info(f"Reporte generado: {out_path}")
         preview_text = df_preview(out_df, rows=min(20, len(out_df)))
         if not movimientos_requested and movimientos_df.empty:
             preview_text += "\n\nMovimientos: no se solicitaron."
