@@ -148,7 +148,8 @@ class BaseWindow(tk.Toplevel):
 
         def _export_logs() -> None:
             contents = log_text.get("1.0", tk.END).rstrip()
-            default_name = f"logs-{service}.txt"
+            timestamp = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+            default_name = f"logs-{service}_{timestamp}.txt"
             path = filedialog.asksaveasfilename(
                 title="Exportar logs",
                 initialdir=os.getcwd(),
