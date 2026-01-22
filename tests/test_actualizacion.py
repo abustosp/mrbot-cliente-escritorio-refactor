@@ -21,12 +21,12 @@ def test_imports():
     print("="*60)
     
     try:
-        from bin.consulta import (
-            consulta_mc,
+        from mrbot_app.consulta import (
             consulta_requests_restantes,
             descargar_archivo_minio,
-            descargar_archivos_minio_concurrente
+            descargar_archivos_minio_concurrente,
         )
+        from mrbot_app.mis_comprobantes import consulta_mc
         print("✓ Todos los imports exitosos")
         return True
     except ImportError as e:
@@ -40,7 +40,7 @@ def test_function_signatures():
     print("TEST 2: Verificando firmas de funciones...")
     print("="*60)
     
-    from bin.consulta import consulta_mc
+    from mrbot_app.mis_comprobantes import consulta_mc
     import inspect
     
     sig = inspect.signature(consulta_mc)
@@ -107,7 +107,7 @@ def test_concurrent_downloads():
     print("TEST 4: Verificando descarga concurrente...")
     print("="*60)
     
-    from bin.consulta import descargar_archivos_minio_concurrente, MAX_WORKERS
+    from mrbot_app.consulta import descargar_archivos_minio_concurrente, MAX_WORKERS
     import inspect
     
     sig = inspect.signature(descargar_archivos_minio_concurrente)
@@ -130,7 +130,7 @@ def test_api_endpoints():
     print("TEST 5: Verificando configuración de API...")
     print("="*60)
     
-    from bin.consulta import root_url
+    from mrbot_app.consulta import root_url
     
     print(f"URL base: {root_url}")
     

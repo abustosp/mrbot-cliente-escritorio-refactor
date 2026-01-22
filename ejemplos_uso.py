@@ -5,11 +5,11 @@ Ejemplo de uso de la API v1 de Mis Comprobantes.
 Este script demuestra cómo usar las nuevas funciones actualizadas.
 """
 
-from bin.consulta import (
-    consulta_mc,
+from mrbot_app.consulta import (
     consulta_requests_restantes,
-    descargar_archivos_minio_concurrente
+    descargar_archivos_minio_concurrente,
 )
+from mrbot_app.mis_comprobantes import consulta_mc
 import os
 from dotenv import load_dotenv
 

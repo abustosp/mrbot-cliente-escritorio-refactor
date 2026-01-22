@@ -10,7 +10,8 @@ La documentación principal está consolidada en `README.md`.
 
 Archivos útiles:
 - `GUIA_RAPIDA.md`: recordatorio corto (comandos básicos)
-- `bin/consulta.py`: referencia de Mis Comprobantes y descargas MinIO
+- `mrbot_app/consulta.py`: descargas MinIO y requests restantes
+- `mrbot_app/mis_comprobantes.py`: Mis Comprobantes (consulta y masivo CSV/XLSX)
 - `mrbot_app/`: helpers y ventanas de la GUI
 - `ejemplos_api/`: Excels de ejemplo
 

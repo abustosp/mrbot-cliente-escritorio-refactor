@@ -9,7 +9,7 @@ import pandas as pd
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from bin.consulta import descargar_archivo_minio
+from mrbot_app.consulta import descargar_archivo_minio
 from mrbot_app.files import open_with_default_app
 from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, make_today_str, safe_post
 from mrbot_app.windows.base import BaseWindow

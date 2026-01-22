@@ -8,7 +8,7 @@ import pandas as pd
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from bin.consulta import consulta_mc_csv
+from mrbot_app.mis_comprobantes import consulta_mc_csv
 from mrbot_app.config import DEFAULT_API_KEY, DEFAULT_BASE_URL, DEFAULT_EMAIL
 from mrbot_app.files import open_with_default_app
 from mrbot_app.helpers import build_headers, ensure_trailing_slash, safe_get

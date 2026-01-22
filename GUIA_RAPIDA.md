@@ -12,7 +12,7 @@ python mrbot.py                   # abre la GUI
 
 Uso programático mínimo:
 ```python
-from bin.consulta import consulta_mc, consulta_mc_csv
+from mrbot_app.mis_comprobantes import consulta_mc, consulta_mc_csv
 consulta_mc(...)                  # consulta individual
 consulta_mc_csv("ejemplos_api/mis_comprobantes.xlsx")  # masivo
 ```

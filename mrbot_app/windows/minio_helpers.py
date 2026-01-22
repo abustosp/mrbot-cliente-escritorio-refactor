@@ -3,7 +3,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import unquote, urlparse
 
-from bin.consulta import descargar_archivo_minio
+from mrbot_app.consulta import descargar_archivo_minio
 
 
 def sanitize_identifier(value: str, fallback: str = "desconocido") -> str:

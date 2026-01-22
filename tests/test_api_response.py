@@ -4,7 +4,7 @@ Script para probar la respuesta de la API y verificar los campos de MinIO.
 """
 
 import json
-from bin.consulta import consulta_mc
+from mrbot_app.mis_comprobantes import consulta_mc
 from dotenv import load_dotenv
 
 load_dotenv()

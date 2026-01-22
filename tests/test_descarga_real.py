@@ -20,7 +20,7 @@ from pathlib import Path
 # Agregar el directorio actual al path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from bin.consulta import crear_directorio_seguro, extraer_csv_de_zip
+from mrbot_app.mis_comprobantes import crear_directorio_seguro, extraer_csv_de_zip
 
 def leer_csv_prueba():
     """Lee el CSV de prueba con manejo de encodings."""

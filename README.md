@@ -43,13 +43,13 @@ python mrbot.py
 ```
 Desde la GUI puedes:
 - Editar base URL, API key y mail.
-- Procesar Mis Comprobantes masivo (usa `bin.consulta.consulta_mc_csv`).
+- Procesar Mis Comprobantes masivo (usa `mrbot_app.mis_comprobantes.consulta_mc_csv`).
 - Consultar RCEL, SCT, CCMA, Apócrifos y CUIT (individual/masivo según módulo).
 - Previsualizar Excels y descargar archivos desde MinIO.
 
 ## Uso programático
 ```python
-from bin.consulta import consulta_mc, consulta_mc_csv
+from mrbot_app.mis_comprobantes import consulta_mc, consulta_mc_csv
 
 # Consulta individual
 resp = consulta_mc(
@@ -71,7 +71,7 @@ consulta_mc_csv("./ejemplos_api/mis_comprobantes.xlsx")
 
 Descarga desde MinIO con workers concurrentes:
 ```python
-from bin.consulta import descargar_archivos_minio_concurrente
+from mrbot_app.consulta import descargar_archivos_minio_concurrente
 
 archivos = [
     {"url": resp["mis_comprobantes_emitidos_url_minio"], "destino": "./emitidos.zip"},
@@ -85,9 +85,10 @@ resultados = descargar_archivos_minio_concurrente(archivos, max_workers=10)
 .
 ├── mrbot.py                 # Menú principal GUI
 ├── mrbot_app/               # Helpers y ventanas Tkinter por módulo
+│   ├── consulta.py          # Descargas MinIO y requests restantes
 │   ├── helpers.py
+│   ├── mis_comprobantes.py  # Lógica Mis Comprobantes (consulta y CSV masivo)
 │   └── windows/             # mis_comprobantes, rcel, sct, ccma, apocrifos, consulta_cuit
-├── bin/consulta.py          # Lógica Mis Comprobantes y descargas MinIO
 ├── ejemplos_api/            # Excels de ejemplo (autogenerables)
 ├── Descarga-Mis-Comprobantes.{csv,xlsx}
 ├── tests/                   # Tests existentes (reubicados)
@@ -97,7 +98,7 @@ resultados = descargar_archivos_minio_concurrente(archivos, max_workers=10)
 ```
 
 ## Endpoints y módulos clave
-- Mis Comprobantes: `POST /api/v1/mis_comprobantes/consulta` (GUI: “Descarga Mis Comprobantes”, código: `bin.consulta.consulta_mc`)
+- Mis Comprobantes: `POST /api/v1/mis_comprobantes/consulta` (GUI: “Descarga Mis Comprobantes”, código: `mrbot_app.mis_comprobantes.consulta_mc`)
 - RCEL: `POST /api/v1/rcel/consulta` (GUI: ventana RCEL)
 - SCT: `POST /api/v1/sct/consulta` (GUI: ventana SCT con descargas MinIO)
 - CCMA: `POST /api/v1/ccma/consulta`

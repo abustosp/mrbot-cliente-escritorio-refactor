@@ -106,13 +106,15 @@ print("\n[TEST 3] Verificando módulos...")
 print("-"*70)
 
 try:
-    from bin.consulta import (
-        consulta_mc,
+    from mrbot_app.consulta import (
         consulta_requests_restantes,
         descargar_archivos_minio_concurrente,
+    )
+    from mrbot_app.mis_comprobantes import (
+        consulta_mc,
         consulta_mc_csv,
         crear_directorio_seguro,
-        extraer_csv_de_zip
+        extraer_csv_de_zip,
     )
     print("✓ Todos los módulos importados correctamente")
 except ImportError as e:
@@ -124,7 +126,7 @@ print("-"*70)
 
 if os.getenv('MAIL') and os.getenv('API_KEY'):
     try:
-        from bin.consulta import consulta_requests_restantes
+        from mrbot_app.consulta import consulta_requests_restantes
         
         print(f"  Consultando requests restantes para {os.getenv('MAIL')}...")
         response = consulta_requests_restantes(os.getenv('MAIL'))
@@ -174,7 +176,7 @@ else:
     tests_error.append("✗ Archivo CSV faltante")
 
 try:
-    from bin.consulta import consulta_mc
+    from mrbot_app.mis_comprobantes import consulta_mc
     tests_ok.append("✓ Módulos importados correctamente")
 except:
     tests_error.append("✗ Error en importación de módulos")
