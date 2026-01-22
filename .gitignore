@@ -10,3 +10,5 @@ cambios
 *.xlsx
 .github
 logs*
+temp_build
+
