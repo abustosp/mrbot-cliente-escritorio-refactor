@@ -78,11 +78,7 @@ class SifereWindow(BaseWindow):
 
         self.progress_frame = self.add_progress_bar(container, label="Progreso")
 
-        log_frame = ttk.LabelFrame(container, text="Logs de ejecucion")
-        log_frame.pack(fill="both", expand=True, pady=(6, 0))
-        self.log_text = tk.Text(log_frame, height=10, wrap="word", background="#1b1b1b", foreground="#ffffff")
-        self.log_text.pack(fill="both", expand=True)
-        self.log_text.configure(state="disabled")
+        self.log_text = self.add_collapsible_log(container, title="Logs de ejecucion", height=10, service="sifere")
 
     def seleccionar_carpeta_descarga(self) -> None:
         folder = filedialog.askdirectory()

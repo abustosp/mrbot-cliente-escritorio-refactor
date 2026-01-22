@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 from typing import Optional
 import os
 
@@ -60,6 +60,73 @@ class BaseWindow(tk.Toplevel):
             row=0, column=1, sticky="w", padx=(8, 0)
         )
         return frame
+
+    def add_collapsible_log(
+        self,
+        parent,
+        title: str = "Logs de ejecución",
+        height: int = 10,
+        service: str = "servicio",
+        start_hidden: bool = True,
+    ) -> tk.Text:
+        btns_frame = ttk.Frame(parent)
+        btns_frame.pack(fill="x", pady=(6, 0))
+        toggle_btn = ttk.Button(btns_frame, text="Mostrar logs")
+        toggle_btn.pack(side="left")
+        export_btn = ttk.Button(btns_frame, text="Exportar logs")
+        log_frame = ttk.LabelFrame(parent, text=title)
+        log_text = tk.Text(
+            log_frame,
+            height=height,
+            wrap="word",
+            background="#1b1b1b",
+            foreground="#ffffff",
+        )
+        log_text.pack(fill="both", expand=True)
+        log_text.configure(state="disabled")
+
+        visible = not start_hidden
+        if visible:
+            log_frame.pack(fill="both", expand=True, pady=(2, 0))
+            export_btn.pack(side="left", padx=(6, 0))
+            toggle_btn.configure(text="Ocultar logs")
+
+        def _export_logs() -> None:
+            contents = log_text.get("1.0", tk.END).rstrip()
+            default_name = f"logs-{service}.txt"
+            path = filedialog.asksaveasfilename(
+                title="Exportar logs",
+                initialdir=os.getcwd(),
+                initialfile=default_name,
+                defaultextension=".txt",
+                filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+            )
+            self.bring_to_front()
+            if not path:
+                return
+            try:
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write(contents + "\n" if contents else "")
+                messagebox.showinfo("Logs exportados", f"Logs guardados en:\n{path}")
+            except Exception as exc:
+                messagebox.showerror("Error", f"No se pudo guardar los logs: {exc}")
+
+        def _toggle() -> None:
+            nonlocal visible
+            if visible:
+                log_frame.pack_forget()
+                export_btn.pack_forget()
+                toggle_btn.configure(text="Mostrar logs")
+                visible = False
+            else:
+                log_frame.pack(fill="both", expand=True, pady=(2, 0))
+                export_btn.pack(side="left", padx=(6, 0))
+                toggle_btn.configure(text="Ocultar logs")
+                visible = True
+
+        toggle_btn.configure(command=_toggle)
+        export_btn.configure(command=_export_logs)
+        return log_text
 
     def set_progress(self, current: int, total: int) -> None:
         progress_bar = getattr(self, "_progress_bar", None)
