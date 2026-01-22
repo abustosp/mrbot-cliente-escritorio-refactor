@@ -1,5 +1,7 @@
 import json
-from typing import Any, Dict, List, Optional
+import re
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 import os
 
 import pandas as pd
@@ -111,6 +113,36 @@ class CcmaWindow(BaseWindow):
         except Exception as exc:
             messagebox.showerror("Error", f"No se pudo leer el Excel: {exc}")
 
+    def _sanitize_filename_part(self, value: str, fallback: str = "desconocido") -> str:
+        cleaned = re.sub(r"[^0-9A-Za-z._-]", "_", (value or "").strip())
+        cleaned = cleaned.strip("_")
+        return cleaned or fallback
+
+    def _resolve_cuit_label(self, cuit_repr: str, cuit_rep: str, data: Any) -> str:
+        if cuit_repr:
+            return cuit_repr
+        if isinstance(data, dict):
+            response_ccma = data.get("response_ccma")
+            if isinstance(response_ccma, dict):
+                cuit_data = str(response_ccma.get("cuit", "")).strip()
+                if cuit_data:
+                    return cuit_data
+        return cuit_rep
+
+    def _save_ccma_response_json(self, cuit_label: str, data: Any) -> Tuple[Optional[str], Optional[str]]:
+        try:
+            dest_dir = os.path.join("descargas", "CCMA")
+            os.makedirs(dest_dir, exist_ok=True)
+            safe_cuit = self._sanitize_filename_part(cuit_label)
+            timestamp = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+            filename = f"{safe_cuit}_{timestamp}.json"
+            path = os.path.join(dest_dir, filename)
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(data, fh, ensure_ascii=False, indent=2, default=str)
+            return path, None
+        except Exception as exc:
+            return None, str(exc)
+
     def clear_logs(self) -> None:
         self.log_text.configure(state="normal")
         self.log_text.delete("1.0", tk.END)
@@ -140,6 +172,12 @@ class CcmaWindow(BaseWindow):
         if resp.get("http_status") != 200:
             detail = resp.get("error") or resp.get("detail") or data
             self.log_error(f"HTTP {resp.get('http_status')}: {detail}")
+        cuit_label = self._resolve_cuit_label(payload["cuit_representado"], payload["cuit_representante"], data)
+        json_path, json_error = self._save_ccma_response_json(cuit_label, data)
+        if json_path:
+            self.log_info(f"JSON guardado: {json_path}")
+        if json_error:
+            self.log_error(f"JSON: {json_error}")
         self.set_preview(self.result_box, json.dumps(resp, indent=2, ensure_ascii=False))
 
     def procesar_excel(self) -> None:
@@ -189,6 +227,12 @@ class CcmaWindow(BaseWindow):
             if http_status != 200:
                 detail = resp.get("error") or resp.get("detail") or data
                 self.log_error(f"HTTP {http_status}: {detail}")
+            cuit_label = self._resolve_cuit_label(cuit_repr, cuit_rep, data)
+            json_path, json_error = self._save_ccma_response_json(cuit_label, data)
+            if json_path:
+                self.log_info(f"JSON guardado: {json_path}")
+            if json_error:
+                self.log_error(f"JSON: {json_error}")
             if http_status == 200 and isinstance(data, dict):
                 # Extraer clave "response_ccma" si existe, para replicar ejemplo
                 response_obj = data.get("response_ccma", data)
