@@ -177,19 +177,25 @@ class RcelWindow(BaseWindow):
         messages.append(f"No se pudo preparar la ruta por defecto '{fallback}'.")
         return None, messages
 
+    def _is_pdf_url(self, url: Any) -> bool:
+        if not isinstance(url, str):
+            return False
+        clean = url.strip()
+        if not clean.lower().startswith("http"):
+            return False
+        lowered = clean.lower()
+        if "minio" in lowered:
+            return True
+        return lowered.split("?")[0].endswith(".pdf")
+
     def _extract_pdf_links(self, data: Any) -> List[Dict[str, str]]:
         links: List[Dict[str, str]] = []
         seen: set[Tuple[str, str]] = set()
 
         def add_link(url: str) -> None:
-            if not isinstance(url, str):
+            if not self._is_pdf_url(url):
                 return
             url = url.strip()
-            if not url.lower().startswith("http"):
-                return
-            lowered = url.lower()
-            if "minio" not in lowered and not lowered.split("?")[0].lower().endswith(".pdf"):
-                return
             filename = os.path.basename(urlparse(url).path) or "factura.pdf"
             key = (url, filename)
             if key in seen:
@@ -210,6 +216,57 @@ class RcelWindow(BaseWindow):
 
         walk(data)
         return links
+
+    def _extract_item_pdf_url(self, item: Dict[str, Any]) -> Optional[str]:
+        for key in ("URL_MINIO", "url_minio", "url_pdf", "link_pdf", "url", "link"):
+            url = item.get(key)
+            if self._is_pdf_url(url):
+                return str(url).strip()
+        for value in item.values():
+            if self._is_pdf_url(value):
+                return str(value).strip()
+        return None
+
+    def _collect_pdf_items(self, data: Any) -> List[Tuple[str, Dict[str, Any]]]:
+        if not isinstance(data, dict):
+            return []
+        collected: List[Tuple[str, Dict[str, Any]]] = []
+        for key in ("facturas_emitidas", "facturas_recibidas", "comprobantes", "facturas"):
+            items = data.get(key)
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                url = self._extract_item_pdf_url(item)
+                if url:
+                    collected.append((url, item))
+        return collected
+
+    def _save_pdf_jsons(self, items: List[Tuple[str, Dict[str, Any]]], dest_dir: Optional[str]) -> Tuple[int, List[str]]:
+        if not dest_dir:
+            return 0, ["No hay ruta de descarga disponible."]
+        saved = 0
+        errors: List[str] = []
+        seen: set[str] = set()
+        for idx, (url, payload) in enumerate(items, start=1):
+            filename = os.path.basename(urlparse(url).path) or f"factura_{idx}.pdf"
+            if filename in seen:
+                continue
+            seen.add(filename)
+            pdf_path = os.path.join(dest_dir, filename)
+            if not os.path.exists(pdf_path):
+                errors.append(f"{filename}: PDF no encontrado para guardar JSON")
+                continue
+            json_name = os.path.splitext(filename)[0] + ".json"
+            json_path = os.path.join(dest_dir, json_name)
+            try:
+                with open(json_path, "w", encoding="utf-8") as fh:
+                    json.dump(payload, fh, ensure_ascii=False, indent=2)
+                saved += 1
+            except Exception as exc:
+                errors.append(f"{json_name}: {exc}")
+        return saved, errors
 
     def _download_pdfs(self, links: List[Dict[str, str]], dest_dir: Optional[str]) -> Tuple[int, List[str]]:
         if not dest_dir:
@@ -274,6 +331,13 @@ class RcelWindow(BaseWindow):
                     download_errors.append("No se pudo preparar una carpeta para descargas.")
             else:
                 self.log_info("No se encontraron links de PDF para descargar.")
+            pdf_items = self._collect_pdf_items(data)
+            if pdf_items:
+                saved_json, json_errors = self._save_pdf_jsons(pdf_items, download_dir)
+                if saved_json:
+                    self.log_info(f"JSON guardados: {saved_json} -> {download_dir}")
+                for err in json_errors:
+                    self.log_error(f"JSON: {err}")
         for err in download_errors:
             self.log_error(f"Descarga: {err}")
         self.set_preview(self.result_box, json.dumps(resp, indent=2, ensure_ascii=False))
@@ -339,6 +403,13 @@ class RcelWindow(BaseWindow):
                         download_errors.append("No se pudo preparar una carpeta para descargas.")
                 else:
                     self.log_info("Sin links de PDF para descargar")
+                pdf_items = self._collect_pdf_items(data)
+                if pdf_items:
+                    saved_json, json_errors = self._save_pdf_jsons(pdf_items, download_dir_used)
+                    if saved_json:
+                        self.log_info(f"JSON guardados: {saved_json} -> {download_dir_used}")
+                    for err in json_errors:
+                        self.log_error(f"JSON: {err}")
             for err in download_errors:
                 self.log_error(f"Descarga: {err}")
             rows.append(
