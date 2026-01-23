@@ -11,7 +11,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from mrbot_app.consulta import descargar_archivo_minio
 from mrbot_app.files import open_with_default_app
-from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, make_today_str, safe_post
+from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, format_date_str, make_today_str, safe_post
 from mrbot_app.windows.base import BaseWindow
 
 
@@ -297,8 +297,8 @@ class RcelWindow(BaseWindow):
         base_url, api_key, email = self.config_provider()
         headers = build_headers(api_key, email)
         payload = {
-            "desde": self.desde_var.get().strip(),
-            "hasta": self.hasta_var.get().strip(),
+            "desde": format_date_str(self.desde_var.get().strip()),
+            "hasta": format_date_str(self.hasta_var.get().strip()),
             "cuit_representante": self.cuit_rep_var.get().strip(),
             "nombre_rcel": self.nombre_var.get().strip(),
             "representado_cuit": self.cuit_repr_var.get().strip(),
@@ -362,8 +362,8 @@ class RcelWindow(BaseWindow):
         total = len(df_to_process)
         self.set_progress(0, total)
         for idx, (_, row) in enumerate(df_to_process.iterrows(), start=1):
-            desde = str(row.get("desde", "")).strip() or self.desde_var.get().strip()
-            hasta = str(row.get("hasta", "")).strip() or self.hasta_var.get().strip()
+            desde = format_date_str(row.get("desde", "")) or format_date_str(self.desde_var.get().strip())
+            hasta = format_date_str(row.get("hasta", "")) or format_date_str(self.hasta_var.get().strip())
             row_download = str(
                 row.get("ubicacion_descarga")
                 or row.get("path_descarga")

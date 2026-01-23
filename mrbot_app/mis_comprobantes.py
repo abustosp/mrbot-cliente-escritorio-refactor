@@ -2,7 +2,7 @@ import csv
 import json
 import os
 import zipfile
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
 import pandas as pd
@@ -10,6 +10,7 @@ import requests
 from dotenv import load_dotenv
 
 from mrbot_app.consulta import descargar_archivos_minio_concurrente
+from mrbot_app.helpers import format_date_str
 
 
 load_dotenv(".env", override=True)
@@ -53,6 +54,10 @@ def _to_bool(value: Any, default: bool = False) -> bool:
     if text in {"false", "0", "no", "n"}:
         return False
     return default
+
+
+def _format_date(value: Any) -> str:
+    return format_date_str(value)
 
 
 def _sanitize_path_fragment(text: str, fallback: str = "descarga") -> str:
@@ -143,6 +148,8 @@ def consulta_mc(
         Dict con la respuesta de la API
     """
     url = root_url.rstrip("/") + "/api/v1/mis_comprobantes/consulta"
+    desde = _format_date(desde)
+    hasta = _format_date(hasta)
 
     headers = {
         "Content-Type": "application/json",
@@ -353,17 +360,6 @@ def consulta_mc_csv(
 
     def _to_str(value: Any) -> str:
         return "" if value is None else str(value).strip()
-
-    def _format_date(value: Any) -> str:
-        if isinstance(value, (pd.Timestamp, datetime, date)):
-            return value.strftime("%d/%m/%Y")
-        text = _to_str(value)
-        if not text:
-            return text
-        parsed = pd.to_datetime(text, dayfirst=True, errors="coerce")
-        if pd.notna(parsed):
-            return parsed.strftime("%d/%m/%Y")
-        return text
 
     def _normalize_row_keys(row: Dict[str, Any]) -> Dict[str, Any]:
         return {_normalize_key(k): v for k, v in row.items()}

@@ -1,6 +1,7 @@
 import os
+import re
 import sys
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -74,6 +75,74 @@ def _format_period_aaaamm(value: Any) -> str:
     return text
 
 
+def _format_excel_serial(value: float) -> Optional[str]:
+    try:
+        dt = pd.to_datetime(value, unit="D", origin="1899-12-30")
+    except Exception:
+        return None
+    if pd.isna(dt):
+        return None
+    try:
+        return dt.strftime("%d/%m/%Y")
+    except Exception:
+        return None
+
+
+def format_date_str(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float):
+        try:
+            if pd.isna(value):
+                return ""
+        except Exception:
+            pass
+    if isinstance(value, (pd.Timestamp, datetime, date)):
+        return value.strftime("%d/%m/%Y")
+    if isinstance(value, (int, float)):
+        if 1 <= value <= 80000:
+            formatted = _format_excel_serial(value)
+            if formatted:
+                return formatted
+        if isinstance(value, float) and value.is_integer():
+            text = str(int(value))
+        else:
+            text = str(value)
+        parsed = pd.to_datetime(text, dayfirst=True, errors="coerce")
+        if pd.notna(parsed):
+            return parsed.strftime("%d/%m/%Y")
+        return text
+    text = str(value).strip()
+    if not text:
+        return text
+    if text.isdigit():
+        if len(text) == 8:
+            try:
+                year = int(text[:4])
+            except ValueError:
+                year = 0
+            if 1900 <= year <= 2100:
+                try:
+                    parsed = datetime.strptime(text, "%Y%m%d")
+                    return parsed.strftime("%d/%m/%Y")
+                except Exception:
+                    pass
+    if text.isdigit():
+        num = int(text)
+        if 1 <= num <= 80000:
+            formatted = _format_excel_serial(num)
+            if formatted:
+                return formatted
+    if re.match(r"^\d{4}[-/]\d{1,2}[-/]\d{1,2}", text):
+        parsed = pd.to_datetime(text, dayfirst=False, errors="coerce")
+        if pd.notna(parsed):
+            return parsed.strftime("%d/%m/%Y")
+    parsed = pd.to_datetime(text, dayfirst=True, errors="coerce")
+    if pd.notna(parsed):
+        return parsed.strftime("%d/%m/%Y")
+    return text
+
+
 def _format_dates_str(df: pd.DataFrame) -> pd.DataFrame:
     """Intenta formatear columnas con nombres que contengan desde/hasta/fecha a dd/mm/aaaa como string."""
     out = df.copy()
@@ -83,10 +152,7 @@ def _format_dates_str(df: pd.DataFrame) -> pd.DataFrame:
             out[col] = out[col].apply(_format_period_aaaamm)
             continue
         if any(key in lower_col for key in ["desde", "hasta", "fecha"]):
-            try:
-                out[col] = pd.to_datetime(out[col], dayfirst=True, errors="coerce").dt.strftime("%d/%m/%Y")
-            except Exception:
-                out[col] = out[col].astype(str)
+            out[col] = out[col].apply(format_date_str)
     return out
 
 

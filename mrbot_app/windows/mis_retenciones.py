@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from mrbot_app.files import open_with_default_app
-from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, make_today_str, safe_post
+from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, format_date_str, make_today_str, safe_post
 from mrbot_app.windows.base import BaseWindow
 from mrbot_app.windows.minio_helpers import build_link, collect_minio_links, download_links, prepare_download_dir
 
@@ -177,8 +177,8 @@ class MisRetencionesWindow(BaseWindow):
             "clave_representante": self.clave_rep_var.get(),
             "cuit_representado": cuit_repr,
             "denominacion": self.denominacion_var.get().strip(),
-            "desde": self.desde_var.get().strip(),
-            "hasta": self.hasta_var.get().strip(),
+            "desde": format_date_str(self.desde_var.get().strip()),
+            "hasta": format_date_str(self.hasta_var.get().strip()),
             "carga_minio": True,
             "proxy_request": False,
         }
@@ -222,8 +222,8 @@ class MisRetencionesWindow(BaseWindow):
         for idx, (_, row) in enumerate(df_to_process.iterrows(), start=1):
             cuit_rep = str(row.get("cuit_representante", "")).strip()
             cuit_repr = self._optional_value(str(row.get("cuit_representado", "")))
-            desde = str(row.get("desde", "")).strip() or self.desde_var.get().strip()
-            hasta = str(row.get("hasta", "")).strip() or self.hasta_var.get().strip()
+            desde = format_date_str(row.get("desde", "")) or format_date_str(self.desde_var.get().strip())
+            hasta = format_date_str(row.get("hasta", "")) or format_date_str(self.hasta_var.get().strip())
             row_download = str(row.get("ubicacion_descarga") or row.get("path_descarga") or row.get("carpeta_descarga") or "").strip()
             self.log_separator(cuit_repr or cuit_rep)
             payload = {
