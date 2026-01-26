@@ -171,6 +171,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "cuit_representado": "20987654321",
                     "periodo": "202401",
                     "representado_nombre": "Empresa Ejemplo SA",
+                    "jurisdicciones": "todas",
                     "ubicacion_descarga": "./descargas/SIFERE/20987654321",
                 },
                 {
@@ -180,6 +181,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "cuit_representado": "20999999999",
                     "periodo": "202312",
                     "representado_nombre": "Ejemplo NO",
+                    "jurisdicciones": "901,902;903|904",
                     "ubicacion_descarga": "./descargas/SIFERE/20999999999",
                 },
             ]

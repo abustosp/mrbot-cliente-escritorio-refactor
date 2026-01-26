@@ -41,16 +41,19 @@ class SifereWindow(BaseWindow):
         ttk.Label(inputs, text="CUIT representado").grid(row=2, column=0, sticky="w", padx=4, pady=2)
         ttk.Label(inputs, text="Periodo (AAAAMM)").grid(row=3, column=0, sticky="w", padx=4, pady=2)
         ttk.Label(inputs, text="Representado nombre").grid(row=4, column=0, sticky="w", padx=4, pady=2)
+        ttk.Label(inputs, text="Jurisdicciones (901-924, sep: , ; |)").grid(row=5, column=0, sticky="w", padx=4, pady=2)
         self.cuit_rep_var = tk.StringVar()
         self.clave_rep_var = tk.StringVar()
         self.cuit_repr_var = tk.StringVar()
         self.periodo_var = tk.StringVar()
         self.nombre_repr_var = tk.StringVar()
+        self.jurisdicciones_var = tk.StringVar()
         ttk.Entry(inputs, textvariable=self.cuit_rep_var, width=25).grid(row=0, column=1, padx=4, pady=2, sticky="ew")
         ttk.Entry(inputs, textvariable=self.clave_rep_var, width=25, show="*").grid(row=1, column=1, padx=4, pady=2, sticky="ew")
         ttk.Entry(inputs, textvariable=self.cuit_repr_var, width=25).grid(row=2, column=1, padx=4, pady=2, sticky="ew")
         ttk.Entry(inputs, textvariable=self.periodo_var, width=25).grid(row=3, column=1, padx=4, pady=2, sticky="ew")
         ttk.Entry(inputs, textvariable=self.nombre_repr_var, width=25).grid(row=4, column=1, padx=4, pady=2, sticky="ew")
+        ttk.Entry(inputs, textvariable=self.jurisdicciones_var, width=25).grid(row=5, column=1, padx=4, pady=2, sticky="ew")
         inputs.columnconfigure(1, weight=1)
 
         path_frame = ttk.Frame(container)
@@ -130,6 +133,54 @@ class SifereWindow(BaseWindow):
         clean = (value or "").strip()
         return clean if clean else None
 
+    def _coerce_jurisdiccion(self, value: Any) -> Optional[int]:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            if value.is_integer():
+                return int(value)
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        if text.endswith(".0") and text[:-2].isdigit():
+            text = text[:-2]
+        if text.isdigit():
+            return int(text)
+        return None
+
+    def _parse_jurisdicciones(self, value: Any) -> tuple[List[int], Optional[str]]:
+        if value is None:
+            return [], None
+        if isinstance(value, list):
+            items = value
+        else:
+            text = str(value).strip()
+            if not text:
+                return [], None
+            if text.lower() in {"todas", "todas las", "todas_las", "all"}:
+                return list(range(901, 925)), None
+            text = text.replace(";", ",").replace("|", ",")
+            items = [part.strip() for part in text.split(",") if part.strip()]
+        jurisdicciones: List[int] = []
+        invalid: List[str] = []
+        for item in items:
+            if str(item).strip().lower() in {"todas", "todas las", "todas_las", "all"}:
+                return list(range(901, 925)), None
+            num = self._coerce_jurisdiccion(item)
+            if num is None or not (901 <= num <= 924):
+                invalid.append(str(item).strip())
+                continue
+            jurisdicciones.append(num)
+        if invalid:
+            invalid_text = ", ".join(invalid)
+            return [], f"Jurisdicciones invalidas: {invalid_text}. Deben ser enteros entre 901 y 924."
+        return jurisdicciones, None
+
     def _extract_links(self, data: Any) -> List[Dict[str, str]]:
         links: List[Dict[str, str]] = []
         seen: set[tuple[str, str]] = set()
@@ -165,12 +216,17 @@ class SifereWindow(BaseWindow):
     def consulta_individual(self) -> None:
         base_url, api_key, email = self.config_provider()
         headers = build_headers(api_key, email)
+        jurisdicciones, error = self._parse_jurisdicciones(self.jurisdicciones_var.get())
+        if error:
+            messagebox.showerror("Error", error)
+            return
         payload = {
             "cuit_representante": self.cuit_rep_var.get().strip(),
             "clave_representante": self.clave_rep_var.get(),
             "cuit_representado": self.cuit_repr_var.get().strip(),
             "periodo": self.periodo_var.get().strip(),
             "representado_nombre": self._optional_value(self.nombre_repr_var.get()),
+            "jurisdicciones": jurisdicciones,
             "carga_minio": True,
             "proxy_request": False,
         }
@@ -217,13 +273,30 @@ class SifereWindow(BaseWindow):
             cuit_rep = str(row.get("cuit_representante", "")).strip()
             cuit_repr = str(row.get("cuit_representado", "")).strip()
             row_download = str(row.get("ubicacion_descarga") or row.get("path_descarga") or row.get("carpeta_descarga") or "").strip()
+            jurisdicciones, error = self._parse_jurisdicciones(row.get("jurisdicciones", ""))
             self.log_separator(cuit_repr)
+            if error:
+                self.log_error(error)
+                rows.append(
+                    {
+                        "cuit_representado": cuit_repr,
+                        "http_status": None,
+                        "success": False,
+                        "message": error,
+                        "descargas": 0,
+                        "errores_descarga": None,
+                        "carpeta_descarga": None,
+                    }
+                )
+                self.set_progress(idx, total)
+                continue
             payload = {
                 "cuit_representante": cuit_rep,
                 "clave_representante": str(row.get("clave_representante", "")),
                 "cuit_representado": cuit_repr,
                 "periodo": str(row.get("periodo", "")).strip(),
                 "representado_nombre": self._optional_value(str(row.get("representado_nombre", ""))),
+                "jurisdicciones": jurisdicciones,
                 "carga_minio": True,
                 "proxy_request": False,
             }
