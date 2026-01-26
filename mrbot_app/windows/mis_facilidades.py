@@ -143,6 +143,7 @@ class MisFacilidadesWindow(BaseWindow):
                         "pagos_pdf": item.get("pagos_pdf_url_minio"),
                         "cuotas_pdf": item.get("cuotas_pdf_url_minio"),
                         "obligaciones_pdf": item.get("obligaciones_pdf_url_minio"),
+                        "obligaciones_previsionales_pdf": item.get("obligaciones_previsionales_pdf_url_minio"),
                     }
                     for label, url in candidates.items():
                         hint = f"{prefix}{label}"
