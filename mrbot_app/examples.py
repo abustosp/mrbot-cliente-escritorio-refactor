@@ -128,6 +128,8 @@ def ensure_example_excels() -> Dict[str, str]:
                     "clave_representante": "clave_demo",
                     "cuit_representado": "20987654321",
                     "movimientos": "SI",
+                    "pdf": "SI",
+                    "ubicacion_descarga": "./descargas/CCMA/20987654321",
                 },
                 {
                     "procesar": "NO",
@@ -135,6 +137,8 @@ def ensure_example_excels() -> Dict[str, str]:
                     "clave_representante": "clave_no",
                     "cuit_representado": "20999999999",
                     "movimientos": "NO",
+                    "pdf": "NO",
+                    "ubicacion_descarga": "./descargas/CCMA/20999999999",
                 },
             ]
         ),
