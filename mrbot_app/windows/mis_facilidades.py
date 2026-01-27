@@ -127,6 +127,22 @@ class MisFacilidadesWindow(BaseWindow):
         clean = (value or "").strip()
         return clean if clean else None
 
+    def _extract_api_error(self, data: Any) -> Optional[str]:
+        if not isinstance(data, dict):
+            return None
+        raw = data.get("error")
+        if raw is None:
+            raw = data.get("errores")
+        if raw is None:
+            return None
+        if isinstance(raw, list):
+            parts = [str(item).strip() for item in raw if str(item).strip()]
+            return "; ".join(parts) if parts else None
+        if isinstance(raw, dict):
+            return json.dumps(raw, ensure_ascii=False)
+        text = str(raw).strip()
+        return text if text else None
+
     def _extract_links(self, data: Any) -> List[Dict[str, str]]:
         links: List[Dict[str, str]] = []
         seen: set[tuple[str, str]] = set()
@@ -189,6 +205,9 @@ class MisFacilidadesWindow(BaseWindow):
         resp = safe_post(url, headers, payload)
         data = resp.get("data", {})
         self.log_response(resp.get("http_status"), data)
+        api_error = self._extract_api_error(data)
+        if api_error:
+            self.log_error(api_error)
         cuit_folder = cuit_repr or payload["cuit_login"]
         downloads, errors, download_dir = self._download_from_data(data, self.download_dir_var.get(), cuit_folder)
         if downloads:
@@ -237,6 +256,9 @@ class MisFacilidadesWindow(BaseWindow):
             resp = safe_post(url, headers, payload)
             data = resp.get("data", {})
             self.log_response(resp.get("http_status"), data)
+            api_error = self._extract_api_error(data)
+            if api_error:
+                self.log_error(api_error)
             cuit_folder = cuit_repr or cuit_login
             downloads, errors, download_dir = self._download_from_data(data, row_download or self.download_dir_var.get(), cuit_folder)
             if downloads:
@@ -251,6 +273,7 @@ class MisFacilidadesWindow(BaseWindow):
                     "http_status": resp.get("http_status"),
                     "success": data.get("success") if isinstance(data, dict) else None,
                     "message": data.get("message") if isinstance(data, dict) else None,
+                    "error": api_error,
                     "descargas": downloads,
                     "errores_descarga": "; ".join(errors) if errors else None,
                     "carpeta_descarga": download_dir,
