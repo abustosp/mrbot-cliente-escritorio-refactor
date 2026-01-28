@@ -12,12 +12,11 @@ from mrbot_app.windows.base import BaseWindow
 
 class UsuarioWindow(BaseWindow):
     def __init__(self, master=None, config_provider=None):
-        super().__init__(master, title="Usuarios")
+        super().__init__(master, title="Usuarios", config_provider=config_provider)
         try:
             self.iconbitmap(os.path.join("bin", "ABP-blanco-en-fondo-negro.ico"))
         except Exception:
             pass
-        self.config_provider = config_provider
 
         container = ttk.Frame(self, padding=10)
         container.pack(fill="both", expand=True)
@@ -55,11 +54,6 @@ class UsuarioWindow(BaseWindow):
             self.email_var.set(email)
         if api_key:
             self.api_key_var.set(api_key)
-
-    def _get_config(self) -> Tuple[str, str, str]:
-        if self.config_provider:
-            return self.config_provider()
-        return DEFAULT_BASE_URL, DEFAULT_API_KEY, DEFAULT_EMAIL
 
     def _collect_inputs(self) -> Optional[Tuple[str, str, str]]:
         base_url, api_key_cfg, email_cfg = self._get_config()

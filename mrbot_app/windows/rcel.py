@@ -1,30 +1,36 @@
 import json
 import os
 import re
-from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 import pandas as pd
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import messagebox, ttk
 
 from mrbot_app.consulta import descargar_archivo_minio
-from mrbot_app.files import open_with_default_app
-from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, format_date_str, make_today_str, safe_post
+from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, format_date_str, safe_post
 from mrbot_app.windows.base import BaseWindow
+from mrbot_app.windows.mixins import (
+    DateRangeHandlerMixin,
+    DownloadHandlerMixin,
+    ExcelHandlerMixin,
+)
 
 
-class RcelWindow(BaseWindow):
+class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadHandlerMixin):
+    MODULE_DIR = "RCEL"
+
     def __init__(self, master=None, config_provider=None, example_paths: Optional[Dict[str, str]] = None):
-        super().__init__(master, title="Comprobantes en Linea (RCEL)")
+        super().__init__(master, title="Comprobantes en Linea (RCEL)", config_provider=config_provider)
+        ExcelHandlerMixin.__init__(self)
+        DateRangeHandlerMixin.__init__(self)
+        DownloadHandlerMixin.__init__(self)
         try:
             self.iconbitmap(os.path.join("bin", "ABP-blanco-en-fondo-negro.ico"))
         except Exception:
             pass
-        self.config_provider = config_provider
         self.example_paths = example_paths or {}
-        self.rcel_df: Optional[pd.DataFrame] = None
 
         container = ttk.Frame(self, padding=10)
         container.pack(fill="both", expand=True)
@@ -38,14 +44,8 @@ class RcelWindow(BaseWindow):
             "ubicacion_descarga para indicar la carpeta destino. Si no se define, se usará descargas/RCEL/{CUIT representado}.",
         )
 
-        dates_frame = ttk.Frame(container)
-        dates_frame.pack(fill="x", pady=2)
-        ttk.Label(dates_frame, text="Desde (DD/MM/AAAA)").grid(row=0, column=0, padx=4, pady=2, sticky="w")
-        ttk.Label(dates_frame, text="Hasta (DD/MM/AAAA)").grid(row=1, column=0, padx=4, pady=2, sticky="w")
-        self.desde_var = tk.StringVar(value=f"01/01/{date.today().year}")
-        self.hasta_var = tk.StringVar(value=make_today_str())
-        ttk.Entry(dates_frame, textvariable=self.desde_var, width=15).grid(row=0, column=1, padx=4, pady=2, sticky="w")
-        ttk.Entry(dates_frame, textvariable=self.hasta_var, width=15).grid(row=1, column=1, padx=4, pady=2, sticky="w")
+        # Dates
+        self.add_date_range_frame(container)
 
         inputs = ttk.Frame(container)
         inputs.pack(fill="x", pady=4)
@@ -71,20 +71,15 @@ class RcelWindow(BaseWindow):
         ttk.Checkbutton(opts, text="PDF en base64", variable=self.b64_var).grid(row=0, column=0, padx=4, pady=2, sticky="w")
         ttk.Checkbutton(opts, text="Subir a MinIO", variable=self.minio_var).grid(row=0, column=1, padx=4, pady=2, sticky="w")
 
-        path_frame = ttk.Frame(container)
-        path_frame.pack(fill="x", pady=2)
-        ttk.Label(path_frame, text="Carpeta descargas (opcional)").grid(row=0, column=0, padx=4, pady=2, sticky="w")
-        self.download_dir_var = tk.StringVar()
-        ttk.Entry(path_frame, textvariable=self.download_dir_var, width=45).grid(row=0, column=1, padx=4, pady=2, sticky="ew")
-        ttk.Button(path_frame, text="Elegir carpeta", command=self.seleccionar_carpeta_descarga).grid(row=0, column=2, padx=4, pady=2, sticky="ew")
-        path_frame.columnconfigure(1, weight=1)
+        # Download Path
+        self.add_download_path_frame(container)
 
         btns = ttk.Frame(container)
         btns.pack(fill="x", pady=4)
         ttk.Button(btns, text="Consultar individual", command=self.consulta_individual).grid(row=0, column=0, padx=4, pady=2, sticky="ew")
         ttk.Button(btns, text="Seleccionar Excel", command=self.cargar_excel).grid(row=0, column=1, padx=4, pady=2, sticky="ew")
-        ttk.Button(btns, text="Ejemplo Excel", command=self.abrir_ejemplo).grid(row=0, column=2, padx=4, pady=2, sticky="ew")
-        ttk.Button(btns, text="Previsualizar Excel", command=lambda: self.open_df_preview(self._filter_procesar(self.rcel_df), "Previsualización RCEL")).grid(row=0, column=3, padx=4, pady=2, sticky="ew")
+        ttk.Button(btns, text="Ejemplo Excel", command=lambda: self.abrir_ejemplo_key("rcel.xlsx")).grid(row=0, column=2, padx=4, pady=2, sticky="ew")
+        ttk.Button(btns, text="Previsualizar Excel", command=lambda: self.previsualizar_excel("Previsualización RCEL")).grid(row=0, column=3, padx=4, pady=2, sticky="ew")
         ttk.Button(btns, text="Procesar Excel", command=self.procesar_excel).grid(row=1, column=0, columnspan=4, padx=4, pady=6, sticky="ew")
         btns.columnconfigure((0, 1, 2, 3), weight=1)
 
@@ -95,34 +90,6 @@ class RcelWindow(BaseWindow):
         self.progress_frame = self.add_progress_bar(container, label="Progreso")
 
         self.log_text = self.add_collapsible_log(container, title="Logs de ejecución", height=10, service="rcel")
-
-    def seleccionar_carpeta_descarga(self) -> None:
-        folder = filedialog.askdirectory()
-        self.bring_to_front()
-        if folder:
-            self.download_dir_var.set(folder)
-
-    def abrir_ejemplo(self) -> None:
-        path = self.example_paths.get("rcel.xlsx")
-        if not path:
-            messagebox.showerror("Error", "No se encontro el Excel de ejemplo.")
-            return
-        if not open_with_default_app(path):
-            messagebox.showerror("Error", "No se pudo abrir el Excel de ejemplo.")
-
-    def cargar_excel(self) -> None:
-        filename = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")])
-        self.bring_to_front()
-        if not filename:
-            return
-        try:
-            self.rcel_df = pd.read_excel(filename, dtype=str).fillna("")
-            self.rcel_df.columns = [c.strip().lower() for c in self.rcel_df.columns]
-            filtered = self._filter_procesar(self.rcel_df)
-            self.set_preview(self.preview, df_preview(filtered if filtered is not None else self.rcel_df))
-        except Exception as exc:
-            messagebox.showerror("Error", f"No se pudo leer el Excel: {exc}")
-            self.rcel_df = None
 
     def clear_logs(self) -> None:
         self.log_text.configure(state="normal")
@@ -139,44 +106,6 @@ class RcelWindow(BaseWindow):
         cleaned = cleaned.strip("_")
         return cleaned or fallback
 
-    def _is_writable_dir(self, path: str) -> bool:
-        try:
-            if not path:
-                return False
-            os.makedirs(path, exist_ok=True)
-            probe = os.path.join(path, ".rcel_write_test")
-            with open(probe, "w", encoding="utf-8") as fh:
-                fh.write("ok")
-            os.remove(probe)
-            return True
-        except Exception:
-            return False
-
-    def _filter_procesar(self, df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
-        if df is None:
-            return None
-        filtered = df
-        if "procesar" in filtered.columns:
-            filtered = filtered[filtered["procesar"].str.lower().isin(["si", "sí", "yes", "y", "1"])]
-        return filtered
-
-    def _prepare_download_dir(self, desired_path: str, cuit_repr: str) -> Tuple[Optional[str], List[str]]:
-        messages: List[str] = []
-        target = (desired_path or "").strip()
-        if target:
-            if self._is_writable_dir(target):
-                return target, messages
-            messages.append(f"No se pudo usar la carpeta indicada '{target}'. Se intentará con la ruta por defecto.")
-        fallback = os.path.join("descargas", "RCEL", self._sanitize_identifier(cuit_repr or "desconocido"))
-        if self._is_writable_dir(fallback):
-            if not target:
-                messages.append(f"Usando carpeta por defecto: {fallback}")
-            else:
-                messages.append(f"Usando carpeta por defecto: {fallback}")
-            return fallback, messages
-        messages.append(f"No se pudo preparar la ruta por defecto '{fallback}'.")
-        return None, messages
-
     def _is_pdf_url(self, url: Any) -> bool:
         if not isinstance(url, str):
             return False
@@ -188,7 +117,8 @@ class RcelWindow(BaseWindow):
             return True
         return lowered.split("?")[0].endswith(".pdf")
 
-    def _extract_pdf_links(self, data: Any) -> List[Dict[str, str]]:
+    def _extract_links(self, data: Any) -> List[Dict[str, str]]:
+        """Overrides mixin method to extract PDF links specifically."""
         links: List[Dict[str, str]] = []
         seen: set[Tuple[str, str]] = set()
 
@@ -268,25 +198,6 @@ class RcelWindow(BaseWindow):
                 errors.append(f"{json_name}: {exc}")
         return saved, errors
 
-    def _download_pdfs(self, links: List[Dict[str, str]], dest_dir: Optional[str]) -> Tuple[int, List[str]]:
-        if not dest_dir:
-            return 0, ["No hay ruta de descarga disponible."]
-        successes = 0
-        errors: List[str] = []
-        for link in links:
-            url = link.get("url")
-            filename = link.get("filename") or "factura.pdf"
-            if not url:
-                errors.append(f"{filename}: URL vacía")
-                continue
-            target_path = os.path.join(dest_dir, filename)
-            res = descargar_archivo_minio(url, target_path)
-            if res.get("success"):
-                successes += 1
-            else:
-                errors.append(f"{filename}: {res.get('error') or 'Error al descargar'}")
-        return successes, errors
-
     def _redact(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         safe = dict(payload)
         if "clave" in safe:
@@ -294,7 +205,7 @@ class RcelWindow(BaseWindow):
         return safe
 
     def consulta_individual(self) -> None:
-        base_url, api_key, email = self.config_provider()
+        base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
         payload = {
             "desde": format_date_str(self.desde_var.get().strip()),
@@ -314,23 +225,17 @@ class RcelWindow(BaseWindow):
         resp = safe_post(url, headers, payload)
         data = resp.get("data")
         self.log_response(resp.get("http_status"), data)
-        downloads = 0
-        download_errors: List[str] = []
-        download_dir: Optional[str] = None
+
+        cuit_folder = payload["representado_cuit"]
+        downloads, download_errors, download_dir = self._process_downloads(
+            data, self.MODULE_DIR, cuit_folder
+        )
+        if downloads:
+             self.log_info(f"Descargas completadas ({downloads}) en {download_dir}")
+        elif isinstance(data, dict):
+             self.log_info("No se encontraron links de PDF para descargar.")
+
         if isinstance(data, dict):
-            links = self._extract_pdf_links(data)
-            if links:
-                download_dir, dir_msgs = self._prepare_download_dir(self.download_dir_var.get(), payload["representado_cuit"])
-                for msg in dir_msgs:
-                    self.log_info(msg)
-                if download_dir:
-                    downloads, download_errors = self._download_pdfs(links, download_dir)
-                    if downloads:
-                        self.log_info(f"Descargas completadas ({downloads}) en {download_dir}")
-                else:
-                    download_errors.append("No se pudo preparar una carpeta para descargas.")
-            else:
-                self.log_info("No se encontraron links de PDF para descargar.")
             pdf_items = self._collect_pdf_items(data)
             if pdf_items:
                 saved_json, json_errors = self._save_pdf_jsons(pdf_items, download_dir)
@@ -338,20 +243,21 @@ class RcelWindow(BaseWindow):
                     self.log_info(f"JSON guardados: {saved_json} -> {download_dir}")
                 for err in json_errors:
                     self.log_error(f"JSON: {err}")
+
         for err in download_errors:
             self.log_error(f"Descarga: {err}")
         self.set_preview(self.result_box, json.dumps(resp, indent=2, ensure_ascii=False))
 
     def procesar_excel(self) -> None:
-        if self.rcel_df is None or self.rcel_df.empty:
+        if self.excel_df is None or self.excel_df.empty:
             self.set_progress(0, 0)
             messagebox.showerror("Error", "Carga un Excel primero.")
             return
-        base_url, api_key, email = self.config_provider()
+        base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
         url = ensure_trailing_slash(base_url) + "api/v1/rcel/consulta"
         rows: List[Dict[str, Any]] = []
-        df_to_process = self._filter_procesar(self.rcel_df)
+        df_to_process = self._filter_procesar(self.excel_df)
         if df_to_process is None or df_to_process.empty:
             self.set_progress(0, 0)
             messagebox.showwarning("Sin filas a procesar", "No hay filas marcadas con procesar=SI.")
@@ -370,13 +276,14 @@ class RcelWindow(BaseWindow):
                 or row.get("carpeta_descarga")
                 or ""
             ).strip()
-            self.log_separator(str(row.get("representado_cuit", "")).strip())
+            cuit_repr = str(row.get("representado_cuit", "")).strip()
+            self.log_separator(cuit_repr)
             payload = {
                 "desde": desde,
                 "hasta": hasta,
                 "cuit_representante": str(row.get("cuit_representante", "")).strip(),
                 "nombre_rcel": str(row.get("nombre_rcel", "")).strip(),
-                "representado_cuit": str(row.get("representado_cuit", "")).strip(),
+                "representado_cuit": cuit_repr,
                 "clave": str(row.get("clave", "")),
                 "b64_pdf": bool(self.b64_var.get()),
                 "minio_upload": bool(self.minio_var.get()),
@@ -385,24 +292,17 @@ class RcelWindow(BaseWindow):
             resp = safe_post(url, headers, payload)
             data = resp.get("data", {})
             self.log_response(resp.get("http_status"), data)
-            downloads = 0
-            download_errors: List[str] = []
-            download_dir_used: Optional[str] = None
+
+            downloads, download_errors, download_dir_used = self._process_downloads(
+                data, self.MODULE_DIR, cuit_repr, override_dir=row_download
+            )
+
+            if downloads:
+                self.log_info(f"Descargas completadas: {downloads} -> {download_dir_used}")
+            elif isinstance(data, dict):
+                 self.log_info("Sin links de PDF para descargar")
+
             if isinstance(data, dict):
-                links = self._extract_pdf_links(data)
-                if links:
-                    desired_dir = row_download or self.download_dir_var.get()
-                    download_dir_used, dir_msgs = self._prepare_download_dir(desired_dir, payload["representado_cuit"])
-                    for msg in dir_msgs:
-                        self.log_info(msg)
-                    if download_dir_used:
-                        downloads, download_errors = self._download_pdfs(links, download_dir_used)
-                        if downloads:
-                            self.log_info(f"Descargas completadas: {downloads} -> {download_dir_used}")
-                    else:
-                        download_errors.append("No se pudo preparar una carpeta para descargas.")
-                else:
-                    self.log_info("Sin links de PDF para descargar")
                 pdf_items = self._collect_pdf_items(data)
                 if pdf_items:
                     saved_json, json_errors = self._save_pdf_jsons(pdf_items, download_dir_used)
@@ -410,8 +310,10 @@ class RcelWindow(BaseWindow):
                         self.log_info(f"JSON guardados: {saved_json} -> {download_dir_used}")
                     for err in json_errors:
                         self.log_error(f"JSON: {err}")
+
             for err in download_errors:
                 self.log_error(f"Descarga: {err}")
+
             rows.append(
                 {
                     "representado_cuit": payload["representado_cuit"],

@@ -5,10 +5,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import messagebox, ttk
 
 from mrbot_app.consulta import descargar_archivo_minio
-from mrbot_app.files import open_with_default_app
 from mrbot_app.helpers import (
     build_headers,
     df_preview,
@@ -17,18 +16,19 @@ from mrbot_app.helpers import (
     safe_post,
 )
 from mrbot_app.windows.base import BaseWindow
+from mrbot_app.windows.minio_helpers import prepare_download_dir
+from mrbot_app.windows.mixins import ExcelHandlerMixin
 
 
-class SctWindow(BaseWindow):
+class SctWindow(BaseWindow, ExcelHandlerMixin):
     def __init__(self, master=None, config_provider=None, example_paths: Optional[Dict[str, str]] = None):
-        super().__init__(master, title="Sistema de Cuentas Tributarias (SCT)")
+        super().__init__(master, title="Sistema de Cuentas Tributarias (SCT)", config_provider=config_provider)
+        ExcelHandlerMixin.__init__(self)
         try:
             self.iconbitmap(os.path.join("bin", "ABP-blanco-en-fondo-negro.ico"))
         except Exception:
             pass
-        self.config_provider = config_provider
         self.example_paths = example_paths or {}
-        self.sct_df: Optional[pd.DataFrame] = None
 
         container = ttk.Frame(self, padding=10)
         container.pack(fill="both", expand=True)
@@ -75,8 +75,8 @@ class SctWindow(BaseWindow):
         btns.pack(fill="x", pady=4)
         ttk.Button(btns, text="Consultar individual", command=self.consulta_individual).grid(row=0, column=0, padx=4, pady=2, sticky="ew")
         ttk.Button(btns, text="Seleccionar Excel", command=self.cargar_excel).grid(row=0, column=1, padx=4, pady=2, sticky="ew")
-        ttk.Button(btns, text="Ejemplo Excel", command=self.abrir_ejemplo).grid(row=0, column=2, padx=4, pady=2, sticky="ew")
-        ttk.Button(btns, text="Previsualizar Excel", command=lambda: self.open_df_preview(self.sct_df, "Previsualización SCT")).grid(row=0, column=3, padx=4, pady=2, sticky="ew")
+        ttk.Button(btns, text="Ejemplo Excel", command=lambda: self.abrir_ejemplo_key("sct.xlsx")).grid(row=0, column=2, padx=4, pady=2, sticky="ew")
+        ttk.Button(btns, text="Previsualizar Excel", command=self.previsualizar_excel).grid(row=0, column=3, padx=4, pady=2, sticky="ew")
         ttk.Button(btns, text="Procesar Excel", command=self.procesar_excel).grid(row=1, column=0, columnspan=4, padx=4, pady=6, sticky="ew")
         btns.columnconfigure((0, 1, 2, 3), weight=1)
 
@@ -87,14 +87,6 @@ class SctWindow(BaseWindow):
         self.progress_frame = self.add_progress_bar(container, label="Progreso")
 
         self.log_text = self.add_collapsible_log(container, title="Logs de ejecución", height=12, service="sct")
-
-    def abrir_ejemplo(self) -> None:
-        path = self.example_paths.get("sct.xlsx")
-        if not path:
-            messagebox.showerror("Error", "No se encontro el Excel de ejemplo.")
-            return
-        if not open_with_default_app(path):
-            messagebox.showerror("Error", "No se pudo abrir el Excel de ejemplo.")
 
     def clear_logs(self) -> None:
         if not hasattr(self, "log_text") or self.log_text is None:
@@ -147,22 +139,6 @@ class SctWindow(BaseWindow):
         cleaned = cleaned.strip("_")
         return cleaned or fallback
 
-    def _is_writable_dir(self, path: str) -> bool:
-        try:
-            if not path:
-                return False
-            os.makedirs(path, exist_ok=True)
-            probe = os.path.join(path, ".mrbot_write_test")
-            with open(probe, "w", encoding="utf-8") as fh:
-                fh.write("ok")
-            os.remove(probe)
-            return True
-        except Exception:
-            return False
-
-    def _prepare_dir(self, desired_path: str, base_name: str, cuit_representado: str, cuit_login: str) -> str:
-        return (desired_path or "").strip()
-
     def _download_variant(
         self,
         data: Dict[str, Any],
@@ -192,38 +168,20 @@ class SctWindow(BaseWindow):
             return False, f"Link inexistente o vacío ({' / '.join(minio_keys)})"
 
         filename = self._ensure_extension(base_name, ext)
-        desired_dir = (dest_dir or "").strip()
-        candidate_dirs: List[Tuple[str, bool]] = []
-        dir_errors: List[str] = []
 
-        if desired_dir:
-            if self._is_writable_dir(desired_dir):
-                candidate_dirs.append((desired_dir, False))
-            else:
-                dir_errors.append(f"No se pudo usar el directorio indicado '{desired_dir}'")
+        target_dir = dest_dir or ""
 
-        fallback_dir = os.path.join("descargas", "SCT", self._sanitize_identifier(cuit_repr or "desconocido"))
-        if fallback_dir not in {d for d, _ in candidate_dirs}:
-            if self._is_writable_dir(fallback_dir):
-                candidate_dirs.append((fallback_dir, True))
-            else:
-                dir_errors.append(f"No se pudo preparar el directorio fallback '{fallback_dir}'")
+        final_dir, dir_msgs = prepare_download_dir("SCT", target_dir, cuit_repr)
 
-        if not candidate_dirs:
-            return False, "; ".join(dir_errors) if dir_errors else "No hay rutas disponibles para descargar"
+        if not final_dir:
+             return False, "; ".join(dir_msgs)
 
-        last_error: Optional[str] = None
-        for target_dir, _is_fallback in candidate_dirs:
-            target_path = os.path.join(target_dir, filename)
-            res = descargar_archivo_minio(url, target_path)
-            if res.get("success"):
-                return True, None
-            last_error = res.get("error") or f"Error al descargar en {target_path}"
+        target_path = os.path.join(final_dir, filename)
+        res = descargar_archivo_minio(url, target_path)
+        if res.get("success"):
+            return True, None
 
-        error_msgs = dir_errors.copy()
-        if last_error:
-            error_msgs.append(last_error)
-        return False, "; ".join(error_msgs) if error_msgs else "No se pudo completar la descarga"
+        return False, res.get("error") or f"Error al descargar en {target_path}"
 
     def _process_downloads_per_block(
         self,
@@ -238,7 +196,7 @@ class SctWindow(BaseWindow):
         for prefix, cfg in block_config.items():
             if not cfg.get("enabled"):
                 continue
-            dest_dir = self._prepare_dir(cfg.get("path", ""), cfg.get("name", ""), cuit_repr, cuit_login)
+            dest_dir = cfg.get("path", "")
             for fmt in ("excel", "csv", "pdf"):
                 success, err = self._download_variant(data, outputs, prefix, fmt, dest_dir, cfg.get("name", prefix), cuit_repr)
                 if success:
@@ -246,12 +204,6 @@ class SctWindow(BaseWindow):
                 elif err:
                     errors.append(f"{prefix}-{fmt}: {err}")
         return total_downloaded, errors
-
-    def _filter_procesar_rows(self, df: pd.DataFrame) -> pd.DataFrame:
-        if "procesar" not in df.columns:
-            return df
-        mask = df["procesar"].astype(str).str.lower().isin(["si", "sí", "yes", "y", "1"])
-        return df[mask]
 
     def _row_format_flags(self, row: Optional[pd.Series] = None, prefer_row: bool = False) -> Tuple[bool, bool, bool]:
         excel_enabled = bool(self.opt_excel_minio.get())
@@ -317,7 +269,7 @@ class SctWindow(BaseWindow):
         return outputs, selected
 
     def consulta_individual(self) -> None:
-        base_url, api_key, email = self.config_provider()
+        base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
         include_deuda = bool(self.opt_deuda.get())
         include_vencimientos = bool(self.opt_vencimientos.get())
@@ -346,37 +298,16 @@ class SctWindow(BaseWindow):
         self.log_response(resp.get("http_status"), resp.get("data"))
         self.set_preview(self.result_box, json.dumps(resp, indent=2, ensure_ascii=False))
 
-    def cargar_excel(self) -> None:
-        filename = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")])
-        self.bring_to_front()
-        if not filename:
-            return
-        try:
-            df = pd.read_excel(filename, dtype=str).fillna("")
-            df.columns = [c.strip().lower() for c in df.columns]
-            df = self._filter_procesar_rows(df)
-            if df.empty:
-                self.sct_df = None
-                self.set_preview(self.preview, "Sin filas marcadas con procesar=SI en el Excel seleccionado.")
-                messagebox.showwarning("Sin filas a procesar", "No hay filas marcadas con procesar=SI en el Excel.")
-                return
-            self.sct_df = df
-            self.set_preview(self.preview, df_preview(df, rows=min(20, len(df))))
-        except Exception as exc:
-            messagebox.showerror("Error", f"No se pudo leer el Excel: {exc}")
-
     def procesar_excel(self) -> None:
-        if self.sct_df is None or self.sct_df.empty:
+        if self.excel_df is None or self.excel_df.empty:
             self.set_progress(0, 0)
             messagebox.showerror("Error", "Carga un Excel primero.")
             return
-        base_url, api_key, email = self.config_provider()
+        base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
         url = ensure_trailing_slash(base_url) + "api/v1/sct/consulta"
         rows: List[Dict[str, Any]] = []
-        df_to_process = self.sct_df
-        if "procesar" in df_to_process.columns:
-            df_to_process = df_to_process[df_to_process["procesar"].str.lower().isin(["si", "sí", "yes", "y", "1"])]
+        df_to_process = self._filter_procesar(self.excel_df)
         if df_to_process is None or df_to_process.empty:
             self.set_progress(0, 0)
             messagebox.showwarning("Sin filas a procesar", "No hay filas marcadas con procesar=SI.")

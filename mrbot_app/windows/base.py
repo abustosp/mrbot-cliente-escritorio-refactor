@@ -14,8 +14,9 @@ from mrbot_app.helpers import _format_dates_str
 
 
 class BaseWindow(tk.Toplevel):
-    def __init__(self, master=None, title: str = ""):
+    def __init__(self, master=None, title: str = "", config_provider=None):
         super().__init__(master)
+        self.config_provider = config_provider
         self.configure(background=BG)
         self.title(title)
         self.resizable(False, False)
@@ -33,6 +34,11 @@ class BaseWindow(tk.Toplevel):
         """Trae la ventana al frente después de operaciones como filedialog."""
         self.lift()
         self.focus_force()
+
+    def _get_config(self) -> tuple[str, str, str]:
+        if self.config_provider:
+            return self.config_provider()
+        return DEFAULT_BASE_URL, DEFAULT_API_KEY, DEFAULT_EMAIL
 
     def add_section_label(self, parent, text: str) -> None:
         lbl = ttk.Label(parent, text=text, foreground=FG, background=BG, font=("Arial", 11, "bold"))
