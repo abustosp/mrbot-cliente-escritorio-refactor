@@ -212,9 +212,7 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         if downloads:
             self.log_info(f"PDF descargado: {downloads} -> {download_dir}")
         elif pdf_requested:
-             self.log_info("PDF: no se encontro link en la respuesta.")
-        elif not download_dir and pdf_requested: # This condition might be redundant but safe
-             self.log_error("PDF: no hay carpeta de descarga disponible.")
+            self.log_info("PDF: no se encontro link en la respuesta.")
 
         for err in errors:
             self.log_error(f"PDF: {err}")
@@ -298,7 +296,7 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             if downloads:
                 self.log_info(f"PDF descargado: {downloads} -> {download_dir}")
             elif pdf_flag:
-                 self.log_info("PDF: no se encontro link en la respuesta.")
+                self.log_info("PDF: no se encontro link en la respuesta.")
 
             for err in errors:
                 self.log_error(f"PDF: {err}")

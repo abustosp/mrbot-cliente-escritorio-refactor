@@ -63,7 +63,7 @@ class ApocrifosWindow(BaseWindow, ExcelHandlerMixin):
 
         df_to_process = self._filter_procesar(self.excel_df)
         if df_to_process is None:
-             df_to_process = self.excel_df
+            df_to_process = self.excel_df
 
         self.run_in_thread(self._procesar_excel_worker, df_to_process)
 

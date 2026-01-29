@@ -231,9 +231,9 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
             data, self.MODULE_DIR, cuit_folder
         )
         if downloads:
-             self.log_info(f"Descargas completadas ({downloads}) en {download_dir}")
+            self.log_info(f"Descargas completadas ({downloads}) en {download_dir}")
         elif isinstance(data, dict):
-             self.log_info("No se encontraron links de PDF para descargar.")
+            self.log_info("No se encontraron links de PDF para descargar.")
 
         if isinstance(data, dict):
             pdf_items = self._collect_pdf_items(data)
@@ -268,7 +268,7 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
         url = ensure_trailing_slash(base_url) + "api/v1/rcel/consulta"
         rows: List[Dict[str, Any]] = []
 
-        self.clear_logs()
+        self.after(0, self.clear_logs)
         self.log_start("RCEL", {"modo": "masivo", "filas": len(df_to_process)})
         total = len(df_to_process)
         self.set_progress(0, total)
@@ -309,7 +309,7 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
             if downloads:
                 self.log_info(f"Descargas completadas: {downloads} -> {download_dir_used}")
             elif isinstance(data, dict):
-                 self.log_info("Sin links de PDF para descargar")
+                self.log_info("Sin links de PDF para descargar")
 
             if isinstance(data, dict):
                 pdf_items = self._collect_pdf_items(data)

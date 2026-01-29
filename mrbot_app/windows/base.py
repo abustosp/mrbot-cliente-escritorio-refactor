@@ -165,6 +165,9 @@ class BaseWindow(tk.Toplevel):
             messagebox.showinfo("Proceso en curso", "Ya hay un proceso ejecutándose.")
             return
 
+        # Set flag immediately to prevent race condition
+        self._is_processing = True
+
         def _wrapper():
             self.after(0, lambda: self.toggle_ui_state(True))
             try:

@@ -219,7 +219,7 @@ class SifereWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         url = ensure_trailing_slash(base_url) + "api/v1/sifere/consulta"
         rows: List[Dict[str, Any]] = []
 
-        self.clear_logs()
+        self.after(0, self.clear_logs)
         self.log_start("SIFERE", {"modo": "masivo", "filas": len(df_to_process)})
         total = len(df_to_process)
         self.set_progress(0, total)

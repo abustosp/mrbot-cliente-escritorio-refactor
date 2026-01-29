@@ -77,7 +77,7 @@ class ConsultaCuitWindow(BaseWindow, ExcelHandlerMixin):
         # Assuming we send all at once for now.
 
         if self._abort_event.is_set():
-             return
+            return
 
         cuits = [str(row.get("cuit", "")).strip() for _, row in df_to_process.iterrows() if str(row.get("cuit", "")).strip()]
         total = len(cuits)

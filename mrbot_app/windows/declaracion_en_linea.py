@@ -133,7 +133,9 @@ class DeclaracionEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMix
             if isinstance(url, str) and url.strip():
                 link = build_link(url, None, "ddjj", index)
                 if link:
-                    base = os.path.splitext(link["filename"][0] if isinstance(link["filename"], list) else link["filename"])[0]
+                    base = os.path.splitext(
+                        link["filename"] if isinstance(link["filename"], str) else link["filename"][0]
+                    )[0]
                     return f"{base}.json"
         periodo = None
         datos = item.get("datos")
