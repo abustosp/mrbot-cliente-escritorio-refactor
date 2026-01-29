@@ -17,7 +17,7 @@ from mrbot_app.windows.mixins import DownloadHandlerMixin, ExcelHandlerMixin
 
 
 class DeclaracionEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
-    MODULE_DIR = "Declaracion_en_Linea"
+    MODULE_DIR = "Declaracion_en_linea"
 
     def __init__(self, master=None, config_provider=None, example_paths: Optional[Dict[str, str]] = None):
         super().__init__(master, title="DDJJ en Linea", config_provider=config_provider)

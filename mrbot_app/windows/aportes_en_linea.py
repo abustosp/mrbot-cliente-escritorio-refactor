@@ -13,7 +13,7 @@ from mrbot_app.windows.mixins import DownloadHandlerMixin, ExcelHandlerMixin
 
 
 class AportesEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
-    MODULE_DIR = "Aportes_en_Linea"
+    MODULE_DIR = "Aportes_en_linea"
 
     def __init__(self, master=None, config_provider=None, example_paths: Optional[Dict[str, str]] = None):
         super().__init__(master, title="Aportes en Linea", config_provider=config_provider)
