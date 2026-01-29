@@ -1,6 +1,8 @@
 import os
 import re
 import sys
+import zipfile
+import shutil
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -211,3 +213,62 @@ def to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Datos") -> bytes:
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name=sheet_name)
     return buf.getvalue()
+
+
+def get_unique_filename(directory: str, filename: str) -> str:
+    """
+    Genera un nombre único para el archivo en el directorio.
+    Si el archivo ya existe, agrega un timestamp al nombre (antes de la extensión).
+    Formato timestamp: _YYYYMMDD-HH_MM_SS
+    Si aun con timestamp existe (muy raro), agrega contador.
+    """
+    path = os.path.join(directory, filename)
+    if not os.path.exists(path):
+        return filename
+
+    base, ext = os.path.splitext(filename)
+    timestamp = datetime.now().strftime("%Y%m%d-%H_%M_%S")
+    new_name = f"{base}_{timestamp}{ext}"
+
+    # Loop de seguridad por si acaso cae en el mismo segundo
+    counter = 1
+    while os.path.exists(os.path.join(directory, new_name)):
+        new_name = f"{base}_{timestamp}_{counter}{ext}"
+        counter += 1
+
+    return new_name
+
+
+def unzip_and_rename(zip_path: str, target_name_no_ext: str) -> Optional[str]:
+    """
+    Descomprime el zip en la misma ubicación.
+    Si hay un solo archivo, lo renombra a target_name_no_ext + su extension original.
+    Se asegura de no sobreescribir archivos existentes leyendo directamente del zip.
+    Devuelve la ruta del archivo extraido si tuvo éxito, None en caso contrario.
+    No borra el zip.
+    """
+    try:
+        directory = os.path.dirname(zip_path)
+        with zipfile.ZipFile(zip_path, 'r') as zf:
+            files = zf.namelist()
+            if len(files) != 1:
+                return None  # Requisito: unico archivo
+
+            inner_filename = files[0]
+            _, inner_ext = os.path.splitext(inner_filename)
+
+            # Nombre destino
+            target_filename = target_name_no_ext + inner_ext
+
+            # Verificar colisión para el archivo destino y obtener nombre único
+            unique_target_filename = get_unique_filename(directory, target_filename)
+            final_path = os.path.join(directory, unique_target_filename)
+
+            # Streaming copy directly to target
+            with zf.open(inner_filename) as source:
+                with open(final_path, 'wb') as target:
+                    shutil.copyfileobj(source, target)
+
+            return final_path
+    except Exception:
+        return None
