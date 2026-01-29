@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 import tkinter as tk
 from tkinter import messagebox, ttk
+from urllib.parse import urlparse, unquote
 
 from mrbot_app.mis_comprobantes import consulta_mc
 from mrbot_app.helpers import (
@@ -213,18 +214,24 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
                 return
 
             # Determinar nombre archivo
-            # El nombre final del zip debe tener extensión .zip
             if custom_name:
                 filename_base = custom_name
+                if not filename_base.lower().endswith(".zip"):
+                    filename_zip = f"{filename_base}.zip"
+                else:
+                    filename_zip = filename_base
+                    filename_base = os.path.splitext(filename_base)[0]
             else:
-                filename_base = default_subdir # "Emitidos" o "Recibidos"
-
-            # Asegurar extension .zip para la descarga
-            if not filename_base.lower().endswith(".zip"):
-                filename_zip = f"{filename_base}.zip"
-            else:
-                filename_zip = filename_base
-                filename_base = os.path.splitext(filename_base)[0] # Remover extension para uso posterior en unzip
+                # Si no hay nombre custom, intentar sacar del URL
+                path_url = urlparse(url).path
+                derived_name = unquote(os.path.basename(path_url))
+                if derived_name and derived_name.lower().endswith(".zip"):
+                    filename_zip = derived_name
+                    filename_base = os.path.splitext(derived_name)[0]
+                else:
+                    # Fallback ultimo recurso si URL no tiene nombre
+                    filename_base = default_subdir
+                    filename_zip = f"{filename_base}.zip"
 
             # Resolver colisiones para el ZIP
             final_filename_zip = get_unique_filename(target_dir, filename_zip)
@@ -240,9 +247,10 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
                 self.log_info(f"{desc} descargado en: {full_zip_path}")
 
                 # Descomprimir y renombrar contenido
-                # El nombre objetivo del contenido es custom_name (si existe) o default_subdir
-                # Usamos filename_base que ya tiene el nombre deseado sin extension
-                extracted_path = unzip_and_rename(full_zip_path, filename_base)
+                # El nombre objetivo del contenido debe coincidir con el nombre final del ZIP (sin extension)
+                # para que si se agrego timestamp, el CSV tambien lo tenga.
+                final_stem = os.path.splitext(final_filename_zip)[0]
+                extracted_path = unzip_and_rename(full_zip_path, final_stem)
                 if extracted_path:
                     self.log_info(f"Descomprimido: {os.path.basename(extracted_path)}")
                 else:
