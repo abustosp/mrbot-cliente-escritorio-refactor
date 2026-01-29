@@ -17,7 +17,6 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin):
     def __init__(self, master=None, config_pane: Optional[ttk.Frame] = None, example_paths: Optional[Dict[str, str]] = None):
         provider = config_pane.get_config if config_pane else None
         super().__init__(master, title="Descarga de Mis Comprobantes", config_provider=provider)
-        ExcelHandlerMixin.__init__(self)
         try:
             self.iconbitmap(os.path.join("bin", "ABP-blanco-en-fondo-negro.ico"))
         except Exception:

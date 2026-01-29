@@ -21,8 +21,6 @@ class DeclaracionEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMix
 
     def __init__(self, master=None, config_provider=None, example_paths: Optional[Dict[str, str]] = None):
         super().__init__(master, title="DDJJ en Linea", config_provider=config_provider)
-        ExcelHandlerMixin.__init__(self)
-        DownloadHandlerMixin.__init__(self)
         try:
             self.iconbitmap(os.path.join("bin", "ABP-blanco-en-fondo-negro.ico"))
         except Exception:

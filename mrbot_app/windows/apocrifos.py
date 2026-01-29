@@ -14,7 +14,6 @@ from mrbot_app.windows.mixins import ExcelHandlerMixin
 class ApocrifosWindow(BaseWindow, ExcelHandlerMixin):
     def __init__(self, master=None, config_provider=None, example_paths: Optional[Dict[str, str]] = None):
         super().__init__(master, title="Consulta de Apocrifos", config_provider=config_provider)
-        ExcelHandlerMixin.__init__(self)
         try:
             self.iconbitmap(os.path.join("bin", "ABP-blanco-en-fondo-negro.ico"))
         except Exception:
