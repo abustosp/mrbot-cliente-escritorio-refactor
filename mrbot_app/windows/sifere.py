@@ -4,26 +4,26 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import messagebox, ttk
 
-from mrbot_app.files import open_with_default_app
 from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, safe_post
 from mrbot_app.windows.base import BaseWindow
-from mrbot_app.windows.minio_helpers import build_link, collect_minio_links, download_links, prepare_download_dir
+from mrbot_app.windows.minio_helpers import build_link, collect_minio_links
+from mrbot_app.windows.mixins import DownloadHandlerMixin, ExcelHandlerMixin
 
 
-class SifereWindow(BaseWindow):
+class SifereWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
     MODULE_DIR = "SIFERE"
 
     def __init__(self, master=None, config_provider=None, example_paths: Optional[Dict[str, str]] = None):
-        super().__init__(master, title="SIFERE consultas")
+        super().__init__(master, title="SIFERE consultas", config_provider=config_provider)
+        ExcelHandlerMixin.__init__(self)
+        DownloadHandlerMixin.__init__(self)
         try:
             self.iconbitmap(os.path.join("bin", "ABP-blanco-en-fondo-negro.ico"))
         except Exception:
             pass
-        self.config_provider = config_provider
         self.example_paths = example_paths or {}
-        self.sifere_df: Optional[pd.DataFrame] = None
 
         container = ttk.Frame(self, padding=10)
         container.pack(fill="both", expand=True)
@@ -56,20 +56,15 @@ class SifereWindow(BaseWindow):
         ttk.Entry(inputs, textvariable=self.jurisdicciones_var, width=25).grid(row=5, column=1, padx=4, pady=2, sticky="ew")
         inputs.columnconfigure(1, weight=1)
 
-        path_frame = ttk.Frame(container)
-        path_frame.pack(fill="x", pady=2)
-        ttk.Label(path_frame, text="Carpeta descargas (opcional)").grid(row=0, column=0, padx=4, pady=2, sticky="w")
-        self.download_dir_var = tk.StringVar()
-        ttk.Entry(path_frame, textvariable=self.download_dir_var, width=45).grid(row=0, column=1, padx=4, pady=2, sticky="ew")
-        ttk.Button(path_frame, text="Elegir carpeta", command=self.seleccionar_carpeta_descarga).grid(row=0, column=2, padx=4, pady=2, sticky="ew")
-        path_frame.columnconfigure(1, weight=1)
+        # Download Path
+        self.add_download_path_frame(container)
 
         btns = ttk.Frame(container)
         btns.pack(fill="x", pady=4)
         ttk.Button(btns, text="Consultar individual", command=self.consulta_individual).grid(row=0, column=0, padx=4, pady=2, sticky="ew")
         ttk.Button(btns, text="Seleccionar Excel", command=self.cargar_excel).grid(row=0, column=1, padx=4, pady=2, sticky="ew")
-        ttk.Button(btns, text="Ejemplo Excel", command=self.abrir_ejemplo).grid(row=0, column=2, padx=4, pady=2, sticky="ew")
-        ttk.Button(btns, text="Previsualizar Excel", command=lambda: self.open_df_preview(self._filter_procesar(self.sifere_df), "Previsualizacion SIFERE")).grid(
+        ttk.Button(btns, text="Ejemplo Excel", command=lambda: self.abrir_ejemplo_key("sifere.xlsx")).grid(row=0, column=2, padx=4, pady=2, sticky="ew")
+        ttk.Button(btns, text="Previsualizar Excel", command=lambda: self.previsualizar_excel("Previsualizacion SIFERE")).grid(
             row=0, column=3, padx=4, pady=2, sticky="ew"
         )
         ttk.Button(btns, text="Procesar Excel", command=self.procesar_excel).grid(row=1, column=0, columnspan=4, padx=4, pady=6, sticky="ew")
@@ -83,34 +78,6 @@ class SifereWindow(BaseWindow):
 
         self.log_text = self.add_collapsible_log(container, title="Logs de ejecucion", height=10, service="sifere")
 
-    def seleccionar_carpeta_descarga(self) -> None:
-        folder = filedialog.askdirectory()
-        self.bring_to_front()
-        if folder:
-            self.download_dir_var.set(folder)
-
-    def abrir_ejemplo(self) -> None:
-        path = self.example_paths.get("sifere.xlsx")
-        if not path:
-            messagebox.showerror("Error", "No se encontro el Excel de ejemplo.")
-            return
-        if not open_with_default_app(path):
-            messagebox.showerror("Error", "No se pudo abrir el Excel de ejemplo.")
-
-    def cargar_excel(self) -> None:
-        filename = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")])
-        self.bring_to_front()
-        if not filename:
-            return
-        try:
-            self.sifere_df = pd.read_excel(filename, dtype=str).fillna("")
-            self.sifere_df.columns = [c.strip().lower() for c in self.sifere_df.columns]
-            df_prev = self._filter_procesar(self.sifere_df)
-            self.set_preview(self.preview, df_preview(df_prev if df_prev is not None else self.sifere_df))
-        except Exception as exc:
-            messagebox.showerror("Error", f"No se pudo leer el Excel: {exc}")
-            self.sifere_df = None
-
     def clear_logs(self) -> None:
         self.log_text.configure(state="normal")
         self.log_text.delete("1.0", tk.END)
@@ -120,14 +87,6 @@ class SifereWindow(BaseWindow):
         if not text:
             return
         self.log_message(text)
-
-    def _filter_procesar(self, df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
-        if df is None:
-            return None
-        filtered = df
-        if "procesar" in filtered.columns:
-            filtered = filtered[filtered["procesar"].str.lower().isin(["si", "sí", "yes", "y", "1"])]
-        return filtered
 
     def _optional_value(self, value: str) -> Optional[str]:
         clean = (value or "").strip()
@@ -203,18 +162,8 @@ class SifereWindow(BaseWindow):
             links = collect_minio_links(data, "sifere")
         return links
 
-    def _download_from_data(self, data: Any, desired_dir: str, cuit_repr: str) -> tuple[int, List[str], Optional[str]]:
-        links = self._extract_links(data)
-        if not links:
-            return 0, [], None
-        download_dir, dir_msgs = prepare_download_dir(self.MODULE_DIR, desired_dir, cuit_repr)
-        for msg in dir_msgs:
-            self.log_info(msg)
-        downloads, errors = download_links(links, download_dir)
-        return downloads, errors, download_dir
-
     def consulta_individual(self) -> None:
-        base_url, api_key, email = self.config_provider()
+        base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
         jurisdicciones, error = self._parse_jurisdicciones(self.jurisdicciones_var.get())
         if error:
@@ -241,7 +190,7 @@ class SifereWindow(BaseWindow):
         data = resp.get("data", {})
         self.log_response(resp.get("http_status"), data)
         cuit_folder = payload["cuit_representado"]
-        downloads, errors, download_dir = self._download_from_data(data, self.download_dir_var.get(), cuit_folder)
+        downloads, errors, download_dir = self._process_downloads(data, self.MODULE_DIR, cuit_folder)
         if downloads:
             self.log_info(f"Descargas completadas: {downloads} -> {download_dir}")
         elif data:
@@ -251,15 +200,15 @@ class SifereWindow(BaseWindow):
         self.set_preview(self.result_box, json.dumps(resp, indent=2, ensure_ascii=False))
 
     def procesar_excel(self) -> None:
-        if self.sifere_df is None or self.sifere_df.empty:
+        if self.excel_df is None or self.excel_df.empty:
             self.set_progress(0, 0)
             messagebox.showerror("Error", "Carga un Excel primero.")
             return
-        base_url, api_key, email = self.config_provider()
+        base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
         url = ensure_trailing_slash(base_url) + "api/v1/sifere/consulta"
         rows: List[Dict[str, Any]] = []
-        df_to_process = self._filter_procesar(self.sifere_df)
+        df_to_process = self._filter_procesar(self.excel_df)
         if df_to_process is None or df_to_process.empty:
             self.set_progress(0, 0)
             messagebox.showwarning("Sin filas a procesar", "No hay filas marcadas con procesar=SI.")
@@ -306,7 +255,9 @@ class SifereWindow(BaseWindow):
             resp = safe_post(url, headers, payload)
             data = resp.get("data", {})
             self.log_response(resp.get("http_status"), data)
-            downloads, errors, download_dir = self._download_from_data(data, row_download or self.download_dir_var.get(), cuit_repr)
+            downloads, errors, download_dir = self._process_downloads(
+                data, self.MODULE_DIR, cuit_repr, override_dir=row_download
+            )
             if downloads:
                 self.log_info(f"Descargas completadas: {downloads} -> {download_dir}")
             elif data:

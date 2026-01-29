@@ -6,13 +6,13 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import messagebox, ttk
 
-from mrbot_app.files import open_with_default_app
 from mrbot_app.formatos import aplicar_formato_encabezado, agregar_filtros, autoajustar_columnas
 from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, parse_bool_cell, safe_post
 from mrbot_app.windows.base import BaseWindow
-from mrbot_app.windows.minio_helpers import build_link, download_links, prepare_download_dir
+from mrbot_app.windows.minio_helpers import build_link
+from mrbot_app.windows.mixins import DownloadHandlerMixin, ExcelHandlerMixin
 
 
 def _parse_amount(value: Any) -> Optional[float]:
@@ -40,18 +40,18 @@ def _parse_amount(value: Any) -> Optional[float]:
         return None
 
 
-class CcmaWindow(BaseWindow):
+class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
     MODULE_DIR = "CCMA"
 
     def __init__(self, master=None, config_provider=None, example_paths: Optional[Dict[str, str]] = None):
-        super().__init__(master, title="Cuenta Corriente (CCMA)")
+        super().__init__(master, title="Cuenta Corriente (CCMA)", config_provider=config_provider)
+        ExcelHandlerMixin.__init__(self)
+        DownloadHandlerMixin.__init__(self)
         try:
             self.iconbitmap(os.path.join("bin", "ABP-blanco-en-fondo-negro.ico"))
         except Exception:
             pass
-        self.config_provider = config_provider
         self.example_paths = example_paths or {}
-        self.ccma_df: Optional[pd.DataFrame] = None
 
         container = ttk.Frame(self, padding=10)
         container.pack(fill="both", expand=True)
@@ -80,20 +80,15 @@ class CcmaWindow(BaseWindow):
         ttk.Checkbutton(flags, text="movimientos", variable=self.opt_movimientos).pack(side="left", padx=(0, 12))
         ttk.Checkbutton(flags, text="pdf", variable=self.opt_pdf).pack(side="left")
 
-        path_frame = ttk.Frame(container)
-        path_frame.pack(fill="x", pady=2)
-        ttk.Label(path_frame, text="Carpeta descargas (opcional)").grid(row=0, column=0, padx=4, pady=2, sticky="w")
-        self.download_dir_var = tk.StringVar()
-        ttk.Entry(path_frame, textvariable=self.download_dir_var, width=45).grid(row=0, column=1, padx=4, pady=2, sticky="ew")
-        ttk.Button(path_frame, text="Elegir carpeta", command=self.seleccionar_carpeta_descarga).grid(row=0, column=2, padx=4, pady=2, sticky="ew")
-        path_frame.columnconfigure(1, weight=1)
+        # Download Path
+        self.add_download_path_frame(container)
 
         btns = ttk.Frame(container)
         btns.pack(fill="x", pady=4)
         ttk.Button(btns, text="Consultar individual", command=self.consulta_individual).grid(row=0, column=0, padx=4, pady=2, sticky="ew")
         ttk.Button(btns, text="Seleccionar Excel", command=self.cargar_excel).grid(row=0, column=1, padx=4, pady=2, sticky="ew")
-        ttk.Button(btns, text="Ejemplo Excel", command=self.abrir_ejemplo).grid(row=0, column=2, padx=4, pady=2, sticky="ew")
-        ttk.Button(btns, text="Previsualizar Excel", command=lambda: self.open_df_preview((self.ccma_df[self.ccma_df["procesar"].str.lower().isin(["si", "sí", "yes", "y", "1"])]) if (self.ccma_df is not None and "procesar" in self.ccma_df.columns) else self.ccma_df, "Previsualización CCMA")).grid(row=0, column=3, padx=4, pady=2, sticky="ew")
+        ttk.Button(btns, text="Ejemplo Excel", command=lambda: self.abrir_ejemplo_key("ccma.xlsx")).grid(row=0, column=2, padx=4, pady=2, sticky="ew")
+        ttk.Button(btns, text="Previsualizar Excel", command=lambda: self.previsualizar_excel("Previsualización CCMA")).grid(row=0, column=3, padx=4, pady=2, sticky="ew")
         ttk.Button(btns, text="Procesar Excel", command=self.procesar_excel).grid(row=1, column=0, columnspan=4, padx=4, pady=6, sticky="ew")
         btns.columnconfigure((0, 1, 2, 3), weight=1)
 
@@ -105,33 +100,10 @@ class CcmaWindow(BaseWindow):
 
         self.log_text = self.add_collapsible_log(container, title="Logs de ejecución", height=12, service="ccma")
 
-    def seleccionar_carpeta_descarga(self) -> None:
-        folder = filedialog.askdirectory()
-        self.bring_to_front()
-        if folder:
-            self.download_dir_var.set(folder)
-
-    def abrir_ejemplo(self) -> None:
-        path = self.example_paths.get("ccma.xlsx")
-        if not path:
-            messagebox.showerror("Error", "No se encontro el Excel de ejemplo.")
-            return
-        if not open_with_default_app(path):
-            messagebox.showerror("Error", "No se pudo abrir el Excel de ejemplo.")
-
-    def cargar_excel(self) -> None:
-        filename = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")])
-        if not filename:
-            return
-        try:
-            self.ccma_df = pd.read_excel(filename, dtype=str).fillna("")
-            self.ccma_df.columns = [c.strip().lower() for c in self.ccma_df.columns]
-            df_prev = self.ccma_df
-            if "procesar" in df_prev.columns:
-                df_prev = df_prev[df_prev["procesar"].str.lower().isin(["si", "sí", "yes", "y", "1"])]
-            self.set_preview(self.preview, df_preview(df_prev))
-        except Exception as exc:
-            messagebox.showerror("Error", f"No se pudo leer el Excel: {exc}")
+    def clear_logs(self) -> None:
+        self.log_text.configure(state="normal")
+        self.log_text.delete("1.0", tk.END)
+        self.log_text.configure(state="disabled")
 
     def _sanitize_filename_part(self, value: str, fallback: str = "desconocido") -> str:
         cleaned = re.sub(r"[^0-9A-Za-z._-]", "_", (value or "").strip())
@@ -186,24 +158,20 @@ class CcmaWindow(BaseWindow):
         except Exception as exc:
             return None, str(exc)
 
-    def _extract_pdf_link(self, data: Any) -> Optional[Dict[str, str]]:
+    def _extract_links(self, data: Any) -> List[Dict[str, str]]:
         if not isinstance(data, dict):
-            return None
+            return []
         response_obj = data.get("response_ccma", data)
         if not isinstance(response_obj, dict):
-            return None
+            return []
         url = response_obj.get("pdf_url_minio")
         if isinstance(url, str) and url.strip().lower().startswith("http"):
-            return build_link(url, None, "ccma", 1)
-        return None
-
-    def clear_logs(self) -> None:
-        self.log_text.configure(state="normal")
-        self.log_text.delete("1.0", tk.END)
-        self.log_text.configure(state="disabled")
+            link = build_link(url, None, "ccma", 1)
+            return [link] if link else []
+        return []
 
     def consulta_individual(self) -> None:
-        base_url, api_key, email = self.config_provider()
+        base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
         payload = {
             "cuit_representante": self.cuit_rep_var.get().strip(),
@@ -229,34 +197,36 @@ class CcmaWindow(BaseWindow):
         if resp.get("http_status") != 200:
             detail = resp.get("error") or resp.get("detail") or data
             self.log_error(f"HTTP {resp.get('http_status')}: {detail}")
+
         cuit_label = self._resolve_cuit_label(payload["cuit_representado"], payload["cuit_representante"], data)
-        download_dir, dir_msgs = prepare_download_dir(self.MODULE_DIR, self.download_dir_var.get(), cuit_label)
-        for msg in dir_msgs:
-            self.log_info(msg)
+
+        # Download logic
+        downloads, errors, download_dir = self._process_downloads(data, self.MODULE_DIR, cuit_label)
+
         json_path, json_error = self._save_ccma_response_json(download_dir, cuit_label, data)
         if json_path:
             self.log_info(f"JSON guardado: {json_path}")
         if json_error:
             self.log_error(f"JSON: {json_error}")
-        pdf_link = self._extract_pdf_link(data)
-        if pdf_link and download_dir:
-            downloads, errors = download_links([pdf_link], download_dir)
-            if downloads:
-                self.log_info(f"PDF descargado: {downloads} -> {download_dir}")
-            for err in errors:
-                self.log_error(f"PDF: {err}")
-        elif pdf_link and not download_dir:
-            self.log_error("PDF: no hay carpeta de descarga disponible.")
+
+        if downloads:
+            self.log_info(f"PDF descargado: {downloads} -> {download_dir}")
         elif pdf_requested:
-            self.log_info("PDF: no se encontro link en la respuesta.")
+             self.log_info("PDF: no se encontro link en la respuesta.")
+        elif not download_dir and pdf_requested: # This condition might be redundant but safe
+             self.log_error("PDF: no hay carpeta de descarga disponible.")
+
+        for err in errors:
+            self.log_error(f"PDF: {err}")
+
         self.set_preview(self.result_box, json.dumps(resp, indent=2, ensure_ascii=False))
 
     def procesar_excel(self) -> None:
-        if self.ccma_df is None or self.ccma_df.empty:
+        if self.excel_df is None or self.excel_df.empty:
             self.set_progress(0, 0)
             messagebox.showerror("Error", "Carga un Excel primero.")
             return
-        base_url, api_key, email = self.config_provider()
+        base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
         url = ensure_trailing_slash(base_url) + "api/v1/ccma/consulta"
         rows: List[Dict[str, Any]] = []
@@ -264,9 +234,8 @@ class CcmaWindow(BaseWindow):
         movimientos_requested = False
         movimientos_default = bool(self.opt_movimientos.get())
         pdf_default: Optional[bool] = True if self.opt_pdf.get() else None
-        df_to_process = self.ccma_df
-        if "procesar" in df_to_process.columns:
-            df_to_process = df_to_process[df_to_process["procesar"].str.lower().isin(["si", "sí", "yes", "y", "1"])]
+
+        df_to_process = self._filter_procesar(self.excel_df)
         if df_to_process is None or df_to_process.empty:
             self.set_progress(0, 0)
             messagebox.showwarning("Sin filas a procesar", "No hay filas marcadas con procesar=SI.")
@@ -304,27 +273,28 @@ class CcmaWindow(BaseWindow):
             if http_status != 200:
                 detail = resp.get("error") or resp.get("detail") or data
                 self.log_error(f"HTTP {http_status}: {detail}")
+
             cuit_label = self._resolve_cuit_label(cuit_repr, cuit_rep, data)
             row_download = str(row.get("ubicacion_descarga") or row.get("path_descarga") or row.get("carpeta_descarga") or "").strip()
-            download_dir, dir_msgs = prepare_download_dir(self.MODULE_DIR, row_download or self.download_dir_var.get(), cuit_label)
-            for msg in dir_msgs:
-                self.log_info(msg)
+
+            downloads, errors, download_dir = self._process_downloads(
+                data, self.MODULE_DIR, cuit_label, override_dir=row_download
+            )
+
             json_path, json_error = self._save_ccma_response_json(download_dir, cuit_label, data)
             if json_path:
                 self.log_info(f"JSON guardado: {json_path}")
             if json_error:
                 self.log_error(f"JSON: {json_error}")
-            pdf_link = self._extract_pdf_link(data)
-            if pdf_link and download_dir:
-                downloads, errors = download_links([pdf_link], download_dir)
-                if downloads:
-                    self.log_info(f"PDF descargado: {downloads} -> {download_dir}")
-                for err in errors:
-                    self.log_error(f"PDF: {err}")
-            elif pdf_link and not download_dir:
-                self.log_error("PDF: no hay carpeta de descarga disponible.")
+
+            if downloads:
+                self.log_info(f"PDF descargado: {downloads} -> {download_dir}")
             elif pdf_flag:
-                self.log_info("PDF: no se encontro link en la respuesta.")
+                 self.log_info("PDF: no se encontro link en la respuesta.")
+
+            for err in errors:
+                self.log_error(f"PDF: {err}")
+
             if http_status == 200 and isinstance(data, dict):
                 # Extraer clave "response_ccma" si existe, para replicar ejemplo
                 response_obj = data.get("response_ccma", data)

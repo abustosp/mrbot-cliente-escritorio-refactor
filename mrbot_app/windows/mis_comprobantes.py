@@ -4,25 +4,25 @@ from typing import Dict, Optional
 
 import pandas as pd
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import messagebox, ttk
 
 from mrbot_app.mis_comprobantes import consulta_mc_csv
-from mrbot_app.config import DEFAULT_API_KEY, DEFAULT_BASE_URL, DEFAULT_EMAIL
-from mrbot_app.files import open_with_default_app
 from mrbot_app.helpers import build_headers, ensure_trailing_slash, safe_get
 from mrbot_app.windows.base import BaseWindow
+from mrbot_app.windows.mixins import ExcelHandlerMixin
 
 
-class GuiDescargaMC(BaseWindow):
+class GuiDescargaMC(BaseWindow, ExcelHandlerMixin):
     def __init__(self, master=None, config_pane: Optional[ttk.Frame] = None, example_paths: Optional[Dict[str, str]] = None):
-        super().__init__(master, title="Descarga de Mis Comprobantes")
+        provider = config_pane.get_config if config_pane else None
+        super().__init__(master, title="Descarga de Mis Comprobantes", config_provider=provider)
+        ExcelHandlerMixin.__init__(self)
         try:
             self.iconbitmap(os.path.join("bin", "ABP-blanco-en-fondo-negro.ico"))
         except Exception:
             pass
         self.config_pane = config_pane
         self.example_paths = example_paths or {}
-        self.mc_df: Optional[pd.DataFrame] = None
         self.processing = False
 
         container = ttk.Frame(self, padding=10)
@@ -39,10 +39,10 @@ class GuiDescargaMC(BaseWindow):
         btn_frame = ttk.Frame(container)
         btn_frame.pack(fill="x", pady=8)
 
-        ttk.Button(btn_frame, text="Seleccionar Excel", command=self.open_excel_file).grid(row=0, column=0, padx=4, pady=2, sticky="ew")
+        ttk.Button(btn_frame, text="Seleccionar Excel", command=self.cargar_excel).grid(row=0, column=0, padx=4, pady=2, sticky="ew")
         ttk.Button(btn_frame, text="Requests restantes", command=self.show_requests).grid(row=0, column=1, padx=4, pady=2, sticky="ew")
-        ttk.Button(btn_frame, text="Ver ejemplo", command=self.open_example).grid(row=0, column=2, padx=4, pady=2, sticky="ew")
-        ttk.Button(btn_frame, text="Previsualizar Excel", command=self.preview_excel).grid(row=0, column=3, padx=4, pady=2, sticky="ew")
+        ttk.Button(btn_frame, text="Ver ejemplo", command=lambda: self.abrir_ejemplo_key("mis_comprobantes.xlsx")).grid(row=0, column=2, padx=4, pady=2, sticky="ew")
+        ttk.Button(btn_frame, text="Previsualizar Excel", command=self.previsualizar_excel).grid(row=0, column=3, padx=4, pady=2, sticky="ew")
         ttk.Button(btn_frame, text="Descargar Mis Comprobantes", command=self.confirmar).grid(row=1, column=0, columnspan=4, padx=4, pady=6, sticky="ew")
 
         btn_frame.columnconfigure((0, 1, 2, 3), weight=1)
@@ -54,28 +54,6 @@ class GuiDescargaMC(BaseWindow):
 
         self.log_text = self.add_collapsible_log(container, title="Logs de ejecución", height=16, service="mis_comprobantes")
 
-        self.selected_excel: Optional[str] = None
-
-    def open_excel_file(self) -> None:
-        filename = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")])
-        self.bring_to_front()
-        if not filename:
-            return
-        self.selected_excel = filename
-        try:
-            df = pd.read_excel(filename, dtype=str).fillna("")
-            df.columns = [c.strip().lower() for c in df.columns]
-            if "procesar" in df.columns:
-                df = df[df["procesar"].str.lower().isin(["si", "sí", "yes", "y", "1"])]
-            self.mc_df = df
-            self.set_preview(self.preview, "Excel cargado. Usa 'Previsualizar Excel' para ver los datos.")
-        except Exception as exc:
-            messagebox.showerror("Error", f"No se pudo leer el Excel: {exc}")
-            self.mc_df = None
-
-    def preview_excel(self) -> None:
-        self.open_df_preview(self.mc_df, title="Previsualización Mis Comprobantes")
-
     def clear_logs(self) -> None:
         self.log_text.configure(state="normal")
         self.log_text.delete("1.0", tk.END)
@@ -86,24 +64,15 @@ class GuiDescargaMC(BaseWindow):
             return
         self.log_message(text)
 
-    def open_example(self) -> None:
-        path = self.example_paths.get("mis_comprobantes.xlsx")
-        if not path:
-            messagebox.showerror("Error", "No se encontro el Excel de ejemplo.")
-            return
-        if not open_with_default_app(path):
-            messagebox.showerror("Error", "No se pudo abrir el Excel de ejemplo.")
-
     def show_requests(self) -> None:
-        _, api_key, email = self.config_pane.get_config() if self.config_pane else ("", "", "")
-        base_url, _, _ = self.config_pane.get_config() if self.config_pane else (DEFAULT_BASE_URL, DEFAULT_API_KEY, DEFAULT_EMAIL)
+        base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
         url = ensure_trailing_slash(base_url) + f"api/v1/user/consultas/{email}"
         resp = safe_get(url, headers)
         messagebox.showinfo("Requests restantes", json.dumps(resp.get("data"), indent=2, ensure_ascii=False))
 
     def confirmar(self) -> None:
-        excel_to_use = self.selected_excel or self.example_paths.get("mis_comprobantes.xlsx")
+        excel_to_use = self.excel_filename or self.example_paths.get("mis_comprobantes.xlsx")
         if not excel_to_use:
             messagebox.showerror("Error", "Primero selecciona un Excel o usa el ejemplo de mis_comprobantes.xlsx.")
             return
