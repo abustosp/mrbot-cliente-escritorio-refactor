@@ -7,7 +7,15 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from mrbot_app.mis_comprobantes import consulta_mc
-from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, safe_get, format_date_str
+from mrbot_app.helpers import (
+    build_headers,
+    df_preview,
+    ensure_trailing_slash,
+    safe_get,
+    format_date_str,
+    get_unique_filename,
+    unzip_and_rename
+)
 from mrbot_app.windows.base import BaseWindow
 from mrbot_app.windows.mixins import (
     ExcelHandlerMixin,
@@ -122,8 +130,7 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
                                  cuit_repr: str, nombre_repr: str,
                                  descarga_emitidos: bool, descarga_recibidos: bool) -> List[str]:
         """
-        Helper method to process the response dictionary, extract MinIO links and download them.
-        Returns a list of error messages (if any).
+        Helper method to process the response dictionary for Individual Query (uses subfolders Emitidos/Recibidos).
         """
         errors = []
 
@@ -138,17 +145,13 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
             url_emitidos = response.get("mis_comprobantes_emitidos_url_minio")
             if url_emitidos:
                 self.log_info(f"Emitidos URL: {url_emitidos[:50]}...")
-                # Download logic
                 emitidos_dir = os.path.join(download_root, "Emitidos")
                 os.makedirs(emitidos_dir, exist_ok=True)
 
-                # Mock a list of links format expected by DownloadHandlerMixin logic or similar
-                # Since mixin uses generic list, we construct one manually
                 link_obj = {"url": url_emitidos, "filename": "Emitidos.zip"}
                 downloads, errs = self._download_links_direct([link_obj], emitidos_dir)
                 if downloads:
                      self.log_info(f"Emitidos descargado en: {emitidos_dir}")
-                     # Extract logic could be added here if needed, similar to original script
                 errors.extend(errs)
             else:
                 self.log_info("No URL MinIO para Emitidos.")
@@ -171,8 +174,89 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
 
         return errors
 
+    def _process_response_excel(self, response: Dict[str, Any],
+                                cuit_repr: str, nombre_repr: str,
+                                d_emitidos: bool, d_recibidos: bool,
+                                ub_emitidos: str, nom_emitidos: str,
+                                ub_recibidos: str, nom_recibidos: str,
+                                fallback_root: str) -> List[str]:
+        """
+        Procesa la respuesta para Excel, usando ubicaciones y nombres custom si existen,
+        y descomprimiendo el ZIP.
+        """
+        errors = []
+        if not response.get("success", False):
+            error_msg = response.get("error", response.get("detail", response.get("message", "Error desconocido")))
+            self.log_error(f"Error en API: {error_msg}")
+            return [str(error_msg)]
+
+        def _handle_file(url_key: str, default_subdir: str, custom_path: str, custom_name: str, desc: str):
+            url = response.get(url_key)
+            if not url:
+                self.log_info(f"No URL MinIO para {desc}.")
+                return
+
+            self.log_info(f"{desc} URL: {url[:50]}...")
+
+            # Determinar directorio destino
+            if custom_path:
+                target_dir = custom_path
+                # Si es custom path, no agregamos subdirectorio "Emitidos" etc, va directo.
+            else:
+                # Fallback: mantener comportamiento estándar (subcarpeta)
+                target_dir = os.path.join(fallback_root, default_subdir)
+
+            try:
+                os.makedirs(target_dir, exist_ok=True)
+            except Exception as e:
+                errors.append(f"Error creando directorio {target_dir}: {e}")
+                return
+
+            # Determinar nombre archivo
+            # El nombre final del zip debe tener extensión .zip
+            if custom_name:
+                filename_base = custom_name
+            else:
+                filename_base = default_subdir # "Emitidos" o "Recibidos"
+
+            # Asegurar extension .zip para la descarga
+            if not filename_base.lower().endswith(".zip"):
+                filename_zip = f"{filename_base}.zip"
+            else:
+                filename_zip = filename_base
+                filename_base = os.path.splitext(filename_base)[0] # Remover extension para uso posterior en unzip
+
+            # Resolver colisiones para el ZIP
+            final_filename_zip = get_unique_filename(target_dir, filename_zip)
+
+            link_obj = {"url": url, "filename": final_filename_zip}
+            downloads, errs = self._download_links_direct([link_obj], target_dir)
+
+            if errs:
+                errors.extend(errs)
+
+            if downloads > 0:
+                full_zip_path = os.path.join(target_dir, final_filename_zip)
+                self.log_info(f"{desc} descargado en: {full_zip_path}")
+
+                # Descomprimir y renombrar contenido
+                # El nombre objetivo del contenido es custom_name (si existe) o default_subdir
+                # Usamos filename_base que ya tiene el nombre deseado sin extension
+                extracted_path = unzip_and_rename(full_zip_path, filename_base)
+                if extracted_path:
+                    self.log_info(f"Descomprimido: {os.path.basename(extracted_path)}")
+                else:
+                    self.log_warning(f"No se pudo descomprimir/renombrar {full_zip_path} (quizás no contiene un único archivo o error zip).")
+
+        if d_emitidos:
+            _handle_file("mis_comprobantes_emitidos_url_minio", "Emitidos", ub_emitidos, nom_emitidos, "Emitidos")
+
+        if d_recibidos:
+            _handle_file("mis_comprobantes_recibidos_url_minio", "Recibidos", ub_recibidos, nom_recibidos, "Recibidos")
+
+        return errors
+
     def _download_links_direct(self, links: List[Dict[str, str]], dest_dir: str) -> tuple[int, List[str]]:
-        # Reuse logic from minio_helpers imported in mixins or implemented locally
         from mrbot_app.windows.minio_helpers import download_links
         return download_links(links, dest_dir)
 
@@ -285,16 +369,27 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
             # Paths specific
             row_download = str(row.get("ubicacion_descarga", "")).strip()
 
+            # New columns
+            ub_emitidos = str(row.get("ubicacion_emitidos", "")).strip()
+            nom_emitidos = str(row.get("nombre_emitidos", "")).strip()
+            ub_recibidos = str(row.get("ubicacion_recibidos", "")).strip()
+            nom_recibidos = str(row.get("nombre_recibidos", "")).strip()
+
             self.log_separator(f"{nombre_repr} ({cuit_repr})")
 
-            # Determine directory
-            final_dir = row_download
-            if not final_dir:
+            # Determine fallback directory
+            fallback_dir = row_download
+            if not fallback_dir:
                  from mrbot_app.mis_comprobantes import FALLBACK_BASE_DIR
-                 final_dir = os.path.join(FALLBACK_BASE_DIR, cuit_inicio, nombre_repr or cuit_repr)
+                 fallback_dir = os.path.join(FALLBACK_BASE_DIR, cuit_inicio, nombre_repr or cuit_repr)
 
             try:
-                os.makedirs(final_dir, exist_ok=True)
+                # We only need to create fallback_dir if we are actually using it, but it doesn't hurt to ensure it exists
+                # if it's the base for subfolders.
+                # However, if using custom paths for everything, we might not need this.
+                # But to be safe for mixed usage:
+                if not (ub_emitidos and ub_recibidos):
+                     os.makedirs(fallback_dir, exist_ok=True)
             except Exception:
                 pass
 
@@ -306,7 +401,14 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
                 log_fn=self.log_message
             )
 
-            self._process_single_response(response, final_dir, cuit_repr, nombre_repr, d_emitidos, d_recibidos)
+            # Use new processing method
+            self._process_response_excel(
+                response, cuit_repr, nombre_repr,
+                d_emitidos, d_recibidos,
+                ub_emitidos, nom_emitidos,
+                ub_recibidos, nom_recibidos,
+                fallback_dir
+            )
 
             self.set_progress(idx, total)
 
