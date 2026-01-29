@@ -52,6 +52,10 @@ class ConsultaCuitWindow(BaseWindow, ExcelHandlerMixin):
         headers = build_headers(api_key, email)
         payload = {"cuit": self.cuit_var.get().strip()}
         url = ensure_trailing_slash(base_url) + "api/v1/consulta_cuit/individual"
+
+        self.run_in_thread(self._worker_individual, url, headers, payload)
+
+    def _worker_individual(self, url, headers, payload):
         resp = safe_post(url, headers, payload)
         self.set_preview(self.result_box, json.dumps(resp, indent=2, ensure_ascii=False))
 
@@ -60,15 +64,22 @@ class ConsultaCuitWindow(BaseWindow, ExcelHandlerMixin):
             self.set_progress(0, 0)
             messagebox.showerror("Error", "Carga un Excel primero.")
             return
-        base_url, api_key, email = self._get_config()
-        headers = build_headers(api_key, email)
-        url = ensure_trailing_slash(base_url) + "api/v1/consulta_cuit/masivo"
 
         df_to_process = self._filter_procesar(self.excel_df)
         if df_to_process is None:
             df_to_process = self.excel_df
 
-        cuits = [str(row.get("cuit", "")).strip() for _, row in df_to_process.iterrows() if str(row.get("cuit", "")).strip()]
+        base_url, api_key, email = self._get_config()
+        headers = build_headers(api_key, email)
+        url = ensure_trailing_slash(base_url) + "api/v1/consulta_cuit/masivo"
+
+        # Copy for thread safety
+        df_copy = df_to_process.copy()
+
+        self.run_in_thread(self._worker_excel, df_copy, url, headers)
+
+    def _worker_excel(self, df, url, headers):
+        cuits = [str(row.get("cuit", "")).strip() for _, row in df.iterrows() if str(row.get("cuit", "")).strip()]
         total = len(cuits)
         self.set_progress(0, total)
         payload = {"cuits": cuits}

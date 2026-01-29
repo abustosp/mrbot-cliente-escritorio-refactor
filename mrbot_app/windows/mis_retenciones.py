@@ -131,9 +131,17 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
         }
         url = ensure_trailing_slash(base_url) + "api/v1/mis_retenciones/consulta"
         self.clear_logs()
+
+        self.run_in_thread(self._worker_individual, url, headers, payload)
+
+    def _worker_individual(self, url, headers, payload):
+        safe_payload = dict(payload)
+        safe_payload["clave_representante"] = "***"
+        cuit_repr = payload.get("cuit_representado")
+
         self.log_start("Mis Retenciones", {"modo": "individual"})
         self.log_separator(cuit_repr or payload["cuit_representante"])
-        self.log_request({**payload, "clave_representante": "***"})
+        self.log_request(safe_payload)
         resp = safe_post(url, headers, payload)
         data = resp.get("data", {})
         self.log_response(resp.get("http_status"), data)
@@ -155,25 +163,42 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
             self.set_progress(0, 0)
             messagebox.showerror("Error", "Carga un Excel primero.")
             return
-        base_url, api_key, email = self._get_config()
-        headers = build_headers(api_key, email)
-        url = ensure_trailing_slash(base_url) + "api/v1/mis_retenciones/consulta"
-        rows: List[Dict[str, Any]] = []
+
         df_to_process = self._filter_procesar(self.excel_df)
         if df_to_process is None or df_to_process.empty:
             self.set_progress(0, 0)
             messagebox.showwarning("Sin filas a procesar", "No hay filas marcadas con procesar=SI.")
             return
 
+        base_url, api_key, email = self._get_config()
+        headers = build_headers(api_key, email)
+        url = ensure_trailing_slash(base_url) + "api/v1/mis_retenciones/consulta"
+
+        # Capture defaults from UI
+        default_desde = format_date_str(self.desde_var.get().strip())
+        default_hasta = format_date_str(self.hasta_var.get().strip())
+
+        # Copy for thread safety
+        df_copy = df_to_process.copy()
+
         self.clear_logs()
-        self.log_start("Mis Retenciones", {"modo": "masivo", "filas": len(df_to_process)})
-        total = len(df_to_process)
+        self.log_start("Mis Retenciones", {"modo": "masivo", "filas": len(df_copy)})
+
+        self.run_in_thread(self._worker_excel, df_copy, url, headers, default_desde, default_hasta)
+
+    def _worker_excel(self, df, url, headers, default_desde, default_hasta):
+        rows: List[Dict[str, Any]] = []
+        total = len(df)
         self.set_progress(0, total)
-        for idx, (_, row) in enumerate(df_to_process.iterrows(), start=1):
+
+        for idx, (_, row) in enumerate(df.iterrows(), start=1):
+            if self._abort_event.is_set():
+                break
+
             cuit_rep = str(row.get("cuit_representante", "")).strip()
             cuit_repr = self._optional_value(str(row.get("cuit_representado", "")))
-            desde = format_date_str(row.get("desde", "")) or format_date_str(self.desde_var.get().strip())
-            hasta = format_date_str(row.get("hasta", "")) or format_date_str(self.hasta_var.get().strip())
+            desde = format_date_str(row.get("desde", "")) or default_desde
+            hasta = format_date_str(row.get("hasta", "")) or default_hasta
             row_download = str(row.get("ubicacion_descarga") or row.get("path_descarga") or row.get("carpeta_descarga") or "").strip()
             self.log_separator(cuit_repr or cuit_rep)
             payload = {

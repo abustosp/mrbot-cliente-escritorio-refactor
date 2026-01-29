@@ -1,10 +1,12 @@
 import json
 import os
+import threading
+import queue
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Callable
 
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox, filedialog, scrolledtext
 
 import pandas as pd
 
@@ -24,6 +26,13 @@ class BaseWindow(tk.Toplevel):
         style.configure("TLabelframe", background=BG)
         style.configure("TLabelframe.Label", background=BG, foreground=FG)
         
+        # Threading infrastructure
+        self._abort_event = threading.Event()
+        self.throbber_frame = None
+        self.throbber = None
+        self.abort_btn = None
+        self.log_windows = []  # Keep track of open log windows
+
         # Traer ventana al frente
         self.lift()
         self.focus_force()
@@ -57,14 +66,27 @@ class BaseWindow(tk.Toplevel):
         return txt
 
     def _append_log_widget(self, text: str) -> None:
-        log_text = getattr(self, "log_text", None)
-        if log_text is None or not text:
-            return
-        log_text.configure(state="normal")
-        log_text.insert(tk.END, text)
-        log_text.see(tk.END)
-        log_text.configure(state="disabled")
-        log_text.update_idletasks()
+        def _update():
+            log_text = getattr(self, "log_text", None)
+            if log_text is None or not text:
+                return
+            log_text.configure(state="normal")
+            log_text.insert(tk.END, text)
+            log_text.see(tk.END)
+            log_text.configure(state="disabled")
+
+            # Update separate log windows
+            for win_text_widget in self.log_windows:
+                try:
+                    win_text_widget.configure(state="normal")
+                    win_text_widget.insert(tk.END, text)
+                    win_text_widget.see(tk.END)
+                    win_text_widget.configure(state="disabled")
+                except Exception:
+                    # If window was closed, this might fail, just ignore or cleanup
+                    pass
+
+        self.after(0, _update)
 
     def _format_log_message(self, message: str) -> str:
         if not message:
@@ -120,6 +142,16 @@ class BaseWindow(tk.Toplevel):
         ttk.Label(frame, textvariable=self._progress_label_var, style="Progress.TLabel").grid(
             row=0, column=1, sticky="w", padx=(8, 0)
         )
+
+        # Throbber and Abort button area
+        self.throbber_frame = ttk.Frame(frame)
+        self.throbber_frame.grid(row=0, column=2, sticky="e", padx=(8, 4))
+        self.throbber = ttk.Progressbar(self.throbber_frame, mode="indeterminate", length=100)
+        self.throbber.pack(side="left", padx=(0, 4))
+        self.abort_btn = ttk.Button(self.throbber_frame, text="Abortar", command=self.abort_process)
+        self.abort_btn.pack(side="left")
+        self.throbber_frame.grid_remove() # Hide initially
+
         return frame
 
     def add_collapsible_log(
@@ -135,6 +167,8 @@ class BaseWindow(tk.Toplevel):
         toggle_btn = ttk.Button(btns_frame, text="Mostrar logs")
         toggle_btn.pack(side="left")
         export_btn = ttk.Button(btns_frame, text="Exportar logs")
+        open_new_btn = ttk.Button(btns_frame, text="Abrir en nueva ventana")
+
         log_frame = ttk.LabelFrame(parent, text=title)
         log_text = tk.Text(
             log_frame,
@@ -150,6 +184,7 @@ class BaseWindow(tk.Toplevel):
         if visible:
             log_frame.pack(fill="both", expand=True, pady=(2, 0))
             export_btn.pack(side="left", padx=(6, 0))
+            open_new_btn.pack(side="left", padx=(6, 0))
             toggle_btn.configure(text="Ocultar logs")
 
         def _export_logs() -> None:
@@ -178,39 +213,72 @@ class BaseWindow(tk.Toplevel):
             if visible:
                 log_frame.pack_forget()
                 export_btn.pack_forget()
+                open_new_btn.pack_forget()
                 toggle_btn.configure(text="Mostrar logs")
                 visible = False
             else:
                 log_frame.pack(fill="both", expand=True, pady=(2, 0))
                 export_btn.pack(side="left", padx=(6, 0))
+                open_new_btn.pack(side="left", padx=(6, 0))
                 toggle_btn.configure(text="Ocultar logs")
                 visible = True
 
+        def _open_new_window() -> None:
+            top = tk.Toplevel(self)
+            top.title(f"Logs - {service}")
+            top.geometry("800x600")
+            try:
+                top.iconbitmap(os.path.join("bin", "ABP-blanco-en-fondo-negro.ico"))
+            except Exception:
+                pass
+            txt = scrolledtext.ScrolledText(top, wrap="word", background="#1b1b1b", foreground="#ffffff")
+            txt.pack(fill="both", expand=True)
+
+            # Copy current logs
+            current_content = log_text.get("1.0", tk.END)
+            txt.insert("1.0", current_content)
+            txt.configure(state="disabled")
+
+            self.log_windows.append(txt)
+
+            def _on_close():
+                if txt in self.log_windows:
+                    self.log_windows.remove(txt)
+                top.destroy()
+
+            top.protocol("WM_DELETE_WINDOW", _on_close)
+
         toggle_btn.configure(command=_toggle)
         export_btn.configure(command=_export_logs)
+        open_new_btn.configure(command=_open_new_window)
         return log_text
 
     def set_progress(self, current: int, total: int) -> None:
-        progress_bar = getattr(self, "_progress_bar", None)
-        progress_label_var = getattr(self, "_progress_label_var", None)
-        if progress_bar is None or progress_label_var is None:
-            return
-        if total <= 0:
-            progress_bar.configure(maximum=1, value=0)
-            progress_label_var.set("0/0")
-        else:
-            value = max(0, min(int(current), int(total)))
-            progress_bar.configure(maximum=int(total), value=value)
-            progress_label_var.set(f"{value}/{int(total)}")
-        progress_bar.update_idletasks()
+        def _update():
+            progress_bar = getattr(self, "_progress_bar", None)
+            progress_label_var = getattr(self, "_progress_label_var", None)
+            if progress_bar is None or progress_label_var is None:
+                return
+            if total <= 0:
+                progress_bar.configure(maximum=1, value=0)
+                progress_label_var.set("0/0")
+            else:
+                value = max(0, min(int(current), int(total)))
+                progress_bar.configure(maximum=int(total), value=value)
+                progress_label_var.set(f"{value}/{int(total)}")
+
+        self.after(0, _update)
 
     def set_preview(self, widget: Optional[tk.Text], content: str) -> None:
-        if widget is None:
-            return
-        widget.configure(state="normal")
-        widget.delete("1.0", tk.END)
-        widget.insert(tk.END, content)
-        widget.configure(state="disabled")
+        def _update():
+            if widget is None:
+                return
+            widget.configure(state="normal")
+            widget.delete("1.0", tk.END)
+            widget.insert(tk.END, content)
+            widget.configure(state="disabled")
+
+        self.after(0, _update)
 
     def open_df_preview(self, df: Optional[pd.DataFrame], title: str = "Previsualización de Excel", max_rows: int = 50) -> None:
         if df is None or df.empty:
@@ -244,6 +312,50 @@ class BaseWindow(tk.Toplevel):
         txt.insert(tk.END, df_display.to_string(index=False))
         txt.configure(state="disabled")
         ttk.Button(top, text="Cerrar", command=top.destroy).pack(pady=8)
+
+    def run_in_thread(self, target: Callable, *args, **kwargs) -> None:
+        """
+        Ejecuta target(*args, **kwargs) en un hilo separado.
+        Muestra el throbber y habilita el boton de abortar.
+        """
+        if self.throbber_frame:
+            self.throbber_frame.grid()
+            if self.throbber:
+                self.throbber.start()
+            if self.abort_btn:
+                self.abort_btn.state(["!disabled"])
+
+        self._abort_event.clear()
+
+        def _wrapper():
+            try:
+                target(*args, **kwargs)
+            except Exception as e:
+                self.log_error(f"Error en hilo: {e}")
+            finally:
+                self.after(0, self._on_thread_finished)
+
+        t = threading.Thread(target=_wrapper, daemon=True)
+        t.start()
+
+    def _on_thread_finished(self) -> None:
+        """Called on main thread when worker thread finishes."""
+        if self.throbber:
+            self.throbber.stop()
+        if self.throbber_frame:
+            self.throbber_frame.grid_remove()
+
+        if self._abort_event.is_set():
+            self.log_info("Proceso abortado por el usuario.")
+            messagebox.showinfo("Abortado", "El proceso fue detenido por el usuario.")
+
+    def abort_process(self) -> None:
+        """Signal the worker thread to stop."""
+        if messagebox.askyesno("Confirmar", "¿Desea detener el proceso actual?"):
+            self._abort_event.set()
+            if self.abort_btn:
+                self.abort_btn.state(["disabled"])
+            self.log_info("Solicitud de aborto enviada...")
 
 
 class ConfigPane(ttk.Frame):

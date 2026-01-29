@@ -205,10 +205,15 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
                     errors.append(f"{prefix}-{fmt}: {err}")
         return total_downloaded, errors
 
-    def _row_format_flags(self, row: Optional[pd.Series] = None, prefer_row: bool = False) -> Tuple[bool, bool, bool]:
-        excel_enabled = bool(self.opt_excel_minio.get())
-        csv_enabled = bool(self.opt_csv_minio.get())
-        pdf_enabled = bool(self.opt_pdf_minio.get())
+    def _row_format_flags(self, row: Optional[pd.Series] = None, prefer_row: bool = False,
+                          default_excel: bool = False, default_csv: bool = False, default_pdf: bool = False) -> Tuple[bool, bool, bool]:
+        """
+        Calculates output flags based on row data or defaults.
+        Pass defaults as arguments to ensure thread safety when running in worker.
+        """
+        excel_enabled = default_excel
+        csv_enabled = default_csv
+        pdf_enabled = default_pdf
 
         if row is not None:
             def pick(key: str, current: bool) -> bool:
@@ -271,10 +276,19 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
     def consulta_individual(self) -> None:
         base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
+
+        # Capture current UI state
         include_deuda = bool(self.opt_deuda.get())
         include_vencimientos = bool(self.opt_vencimientos.get())
         include_ddjj = bool(self.opt_presentacion.get())
-        excel_fmt, csv_fmt, pdf_fmt = self._row_format_flags()
+
+        # Defaults for individual query are based on checkboxes
+        def_excel = bool(self.opt_excel_minio.get())
+        def_csv = bool(self.opt_csv_minio.get())
+        def_pdf = bool(self.opt_pdf_minio.get())
+
+        excel_fmt, csv_fmt, pdf_fmt = self._row_format_flags(None, default_excel=def_excel, default_csv=def_csv, default_pdf=def_pdf)
+
         outputs, has_outputs = self.build_output_flags(include_deuda, include_vencimientos, include_ddjj, excel_fmt, csv_fmt, pdf_fmt)
         if not has_outputs:
             messagebox.showwarning(
@@ -291,6 +305,10 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
         payload.update(outputs)
         url = ensure_trailing_slash(base_url) + "api/v1/sct/consulta"
         self.clear_logs()
+
+        self.run_in_thread(self._worker_individual, url, headers, payload)
+
+    def _worker_individual(self, url, headers, payload):
         self.log_start("SCT", {"modo": "individual"})
         self.log_separator(payload["cuit_representado"])
         self.log_request(self._redact(payload))
@@ -303,31 +321,63 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
             self.set_progress(0, 0)
             messagebox.showerror("Error", "Carga un Excel primero.")
             return
-        base_url, api_key, email = self._get_config()
-        headers = build_headers(api_key, email)
-        url = ensure_trailing_slash(base_url) + "api/v1/sct/consulta"
-        rows: List[Dict[str, Any]] = []
+
         df_to_process = self._filter_procesar(self.excel_df)
         if df_to_process is None or df_to_process.empty:
             self.set_progress(0, 0)
             messagebox.showwarning("Sin filas a procesar", "No hay filas marcadas con procesar=SI.")
             return
 
+        base_url, api_key, email = self._get_config()
+        headers = build_headers(api_key, email)
+        url = ensure_trailing_slash(base_url) + "api/v1/sct/consulta"
+
+        # Capture defaults for Excel processing
+        defaults = {
+            "deuda": bool(self.opt_deuda.get()),
+            "vencimientos": bool(self.opt_vencimientos.get()),
+            "presentacion": bool(self.opt_presentacion.get()),
+            "proxy": bool(self.opt_proxy.get()),
+            "excel": bool(self.opt_excel_minio.get()),
+            "csv": bool(self.opt_csv_minio.get()),
+            "pdf": bool(self.opt_pdf_minio.get()),
+        }
+
+        # Copy for thread safety
+        df_copy = df_to_process.copy()
+
         self.clear_logs()
-        self.log_start("SCT", {"modo": "masivo", "filas": len(df_to_process)})
-        total = len(df_to_process)
+        self.log_start("SCT", {"modo": "masivo", "filas": len(df_copy)})
+
+        self.run_in_thread(self._worker_excel, df_copy, url, headers, defaults)
+
+    def _worker_excel(self, df, url, headers, defaults):
+        rows: List[Dict[str, Any]] = []
+        total = len(df)
         self.set_progress(0, total)
-        for idx, (_, row) in enumerate(df_to_process.iterrows(), start=1):
-            include_deuda = parse_bool_cell(row.get("deuda"), default=self.opt_deuda.get()) if "deuda" in row else bool(self.opt_deuda.get())
+
+        for idx, (_, row) in enumerate(df.iterrows(), start=1):
+            if self._abort_event.is_set():
+                break
+
+            include_deuda = parse_bool_cell(row.get("deuda"), default=defaults["deuda"]) if "deuda" in row else defaults["deuda"]
             include_venc = (
-                parse_bool_cell(row.get("vencimientos"), default=self.opt_vencimientos.get()) if "vencimientos" in row else bool(self.opt_vencimientos.get())
+                parse_bool_cell(row.get("vencimientos"), default=defaults["vencimientos"]) if "vencimientos" in row else defaults["vencimientos"]
             )
             include_ddjj = (
-                parse_bool_cell(row.get("presentacion_ddjj"), default=self.opt_presentacion.get())
+                parse_bool_cell(row.get("presentacion_ddjj"), default=defaults["presentacion"])
                 if "presentacion_ddjj" in row
-                else bool(self.opt_presentacion.get())
+                else defaults["presentacion"]
             )
-            excel_fmt, csv_fmt, pdf_fmt = self._row_format_flags(row, prefer_row=True)
+
+            # Pass defaults to helper to avoid UI access
+            excel_fmt, csv_fmt, pdf_fmt = self._row_format_flags(
+                row, prefer_row=True,
+                default_excel=defaults["excel"],
+                default_csv=defaults["csv"],
+                default_pdf=defaults["pdf"]
+            )
+
             outputs, has_outputs = self.build_output_flags(include_deuda, include_venc, include_ddjj, excel_fmt, csv_fmt, pdf_fmt)
             if not has_outputs:
                 self.log_separator(str(row.get("cuit_representado", "")).strip())
@@ -363,7 +413,7 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
                 "cuit_login": str(row.get("cuit_login", "")).strip(),
                 "clave": str(row.get("clave", "")),
                 "cuit_representado": str(row.get("cuit_representado", "")).strip(),
-                "proxy_request": bool(self.opt_proxy.get()),
+                "proxy_request": defaults["proxy"],
             }
             payload.update(outputs)
             self.log_separator(payload["cuit_representado"])

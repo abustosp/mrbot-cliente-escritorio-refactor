@@ -181,6 +181,10 @@ class SifereWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         }
         url = ensure_trailing_slash(base_url) + "api/v1/sifere/consulta"
         self.clear_logs()
+
+        self.run_in_thread(self._worker_individual, url, headers, payload)
+
+    def _worker_individual(self, url, headers, payload):
         safe_payload = dict(payload)
         safe_payload["clave_representante"] = "***"
         self.log_start("SIFERE", {"modo": "individual"})
@@ -207,18 +211,28 @@ class SifereWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
         url = ensure_trailing_slash(base_url) + "api/v1/sifere/consulta"
-        rows: List[Dict[str, Any]] = []
-        df_to_process = self._filter_procesar(self.excel_df)
-        if df_to_process is None or df_to_process.empty:
-            self.set_progress(0, 0)
-            messagebox.showwarning("Sin filas a procesar", "No hay filas marcadas con procesar=SI.")
-            return
+
+        # Copy for thread safety
+        df_copy = self._filter_procesar(self.excel_df) or pd.DataFrame()
+        if df_copy.empty:
+             messagebox.showwarning("Sin filas a procesar", "No hay filas marcadas con procesar=SI.")
+             return
+        df_copy = df_copy.copy()
 
         self.clear_logs()
-        self.log_start("SIFERE", {"modo": "masivo", "filas": len(df_to_process)})
-        total = len(df_to_process)
+        self.log_start("SIFERE", {"modo": "masivo", "filas": len(df_copy)})
+
+        self.run_in_thread(self._worker_excel, df_copy, url, headers)
+
+    def _worker_excel(self, df, url, headers):
+        rows: List[Dict[str, Any]] = []
+        total = len(df)
         self.set_progress(0, total)
-        for idx, (_, row) in enumerate(df_to_process.iterrows(), start=1):
+
+        for idx, (_, row) in enumerate(df.iterrows(), start=1):
+            if self._abort_event.is_set():
+                break
+
             cuit_rep = str(row.get("cuit_representante", "")).strip()
             cuit_repr = str(row.get("cuit_representado", "")).strip()
             row_download = str(row.get("ubicacion_descarga") or row.get("path_descarga") or row.get("carpeta_descarga") or "").strip()
