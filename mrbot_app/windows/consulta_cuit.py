@@ -4,23 +4,22 @@ import os
 
 import pandas as pd
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import messagebox, ttk
 
-from mrbot_app.files import open_with_default_app
 from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, safe_post
 from mrbot_app.windows.base import BaseWindow
+from mrbot_app.windows.mixins import ExcelHandlerMixin
 
 
-class ConsultaCuitWindow(BaseWindow):
+class ConsultaCuitWindow(BaseWindow, ExcelHandlerMixin):
     def __init__(self, master=None, config_provider=None, example_paths: Optional[Dict[str, str]] = None):
-        super().__init__(master, title="Consulta de CUIT")
+        super().__init__(master, title="Consulta de CUIT", config_provider=config_provider)
+        ExcelHandlerMixin.__init__(self)
         try:
             self.iconbitmap(os.path.join("bin", "ABP-blanco-en-fondo-negro.ico"))
         except Exception:
             pass
-        self.config_provider = config_provider
         self.example_paths = example_paths or {}
-        self.cuit_df: Optional[pd.DataFrame] = None
 
         container = ttk.Frame(self, padding=10)
         container.pack(fill="both", expand=True)
@@ -38,7 +37,7 @@ class ConsultaCuitWindow(BaseWindow):
         btns.pack(fill="x", pady=4)
         ttk.Button(btns, text="Consultar individual", command=self.consulta_individual).grid(row=0, column=0, padx=4, pady=2, sticky="ew")
         ttk.Button(btns, text="Seleccionar Excel", command=self.cargar_excel).grid(row=0, column=1, padx=4, pady=2, sticky="ew")
-        ttk.Button(btns, text="Ejemplo Excel", command=self.abrir_ejemplo).grid(row=0, column=2, padx=4, pady=2, sticky="ew")
+        ttk.Button(btns, text="Ejemplo Excel", command=lambda: self.abrir_ejemplo_key("consulta_cuit.xlsx")).grid(row=0, column=2, padx=4, pady=2, sticky="ew")
         ttk.Button(btns, text="Procesar Excel", command=self.procesar_excel).grid(row=1, column=0, columnspan=3, padx=4, pady=6, sticky="ew")
         btns.columnconfigure((0, 1, 2), weight=1)
 
@@ -48,27 +47,8 @@ class ConsultaCuitWindow(BaseWindow):
 
         self.progress_frame = self.add_progress_bar(container, label="Progreso")
 
-    def abrir_ejemplo(self) -> None:
-        path = self.example_paths.get("consulta_cuit.xlsx")
-        if not path:
-            messagebox.showerror("Error", "No se encontro el Excel de ejemplo.")
-            return
-        if not open_with_default_app(path):
-            messagebox.showerror("Error", "No se pudo abrir el Excel de ejemplo.")
-
-    def cargar_excel(self) -> None:
-        filename = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")])
-        self.bring_to_front()
-        if not filename:
-            return
-        try:
-            self.cuit_df = pd.read_excel(filename, dtype=str).fillna("")
-            self.set_preview(self.preview, df_preview(self.cuit_df))
-        except Exception as exc:
-            messagebox.showerror("Error", f"No se pudo leer el Excel: {exc}")
-
     def consulta_individual(self) -> None:
-        base_url, api_key, email = self.config_provider()
+        base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
         payload = {"cuit": self.cuit_var.get().strip()}
         url = ensure_trailing_slash(base_url) + "api/v1/consulta_cuit/individual"
@@ -76,16 +56,33 @@ class ConsultaCuitWindow(BaseWindow):
         self.set_preview(self.result_box, json.dumps(resp, indent=2, ensure_ascii=False))
 
     def procesar_excel(self) -> None:
-        if self.cuit_df is None or self.cuit_df.empty:
+        if self.excel_df is None or self.excel_df.empty:
             self.set_progress(0, 0)
             messagebox.showerror("Error", "Carga un Excel primero.")
             return
-        base_url, api_key, email = self.config_provider()
+
+        df_to_process = self._filter_procesar(self.excel_df)
+        if df_to_process is None:
+            df_to_process = self.excel_df
+
+        self.run_in_thread(self._procesar_excel_worker, df_to_process)
+
+    def _procesar_excel_worker(self, df_to_process: pd.DataFrame) -> None:
+        base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
         url = ensure_trailing_slash(base_url) + "api/v1/consulta_cuit/masivo"
-        cuits = [str(row.get("cuit", "")).strip() for _, row in self.cuit_df.iterrows() if str(row.get("cuit", "")).strip()]
+
+        # Note: 'consulta_cuit/masivo' seems to take a list of CUITs in one go,
+        # so abort logic inside a loop is less relevant unless we chunk it.
+        # Assuming we send all at once for now.
+
+        if self._abort_event.is_set():
+             return
+
+        cuits = [str(row.get("cuit", "")).strip() for _, row in df_to_process.iterrows() if str(row.get("cuit", "")).strip()]
         total = len(cuits)
         self.set_progress(0, total)
+
         payload = {"cuits": cuits}
         resp = safe_post(url, headers, payload)
         data = resp.get("data", {})

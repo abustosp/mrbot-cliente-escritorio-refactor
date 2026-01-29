@@ -1,7 +1,8 @@
 import json
 import os
+import threading
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
@@ -14,8 +15,9 @@ from mrbot_app.helpers import _format_dates_str
 
 
 class BaseWindow(tk.Toplevel):
-    def __init__(self, master=None, title: str = ""):
+    def __init__(self, master=None, title: str = "", config_provider=None):
         super().__init__(master)
+        self.config_provider = config_provider
         self.configure(background=BG)
         self.title(title)
         self.resizable(False, False)
@@ -23,6 +25,10 @@ class BaseWindow(tk.Toplevel):
         style.configure("TLabelframe", background=BG)
         style.configure("TLabelframe.Label", background=BG, foreground=FG)
         
+        # Thread control
+        self._abort_event = threading.Event()
+        self._is_processing = False
+
         # Traer ventana al frente
         self.lift()
         self.focus_force()
@@ -33,6 +39,11 @@ class BaseWindow(tk.Toplevel):
         """Trae la ventana al frente después de operaciones como filedialog."""
         self.lift()
         self.focus_force()
+
+    def _get_config(self) -> tuple[str, str, str]:
+        if self.config_provider:
+            return self.config_provider()
+        return DEFAULT_BASE_URL, DEFAULT_API_KEY, DEFAULT_EMAIL
 
     def add_section_label(self, parent, text: str) -> None:
         lbl = ttk.Label(parent, text=text, foreground=FG, background=BG, font=("Arial", 11, "bold"))
@@ -76,7 +87,8 @@ class BaseWindow(tk.Toplevel):
         return "\n".join(f"{prefix}{line}" if line else prefix.rstrip() for line in lines)
 
     def log_message(self, message: str) -> None:
-        self._append_log_widget(self._format_log_message(message))
+        # Schedule GUI update on main thread
+        self.after(0, self._append_log_widget, self._format_log_message(message))
 
     def log_info(self, message: str) -> None:
         self.log_message(self._prefix_lines("INFO: ", message))
@@ -108,13 +120,62 @@ class BaseWindow(tk.Toplevel):
         frame = ttk.LabelFrame(parent, text=label)
         frame.pack(fill="x", pady=(6, 0))
         frame.columnconfigure(0, weight=1)
-        self._progress_label_var = tk.StringVar(value="0/0")
+
         self._progress_bar = ttk.Progressbar(frame, orient="horizontal", mode="determinate")
         self._progress_bar.grid(row=0, column=0, sticky="ew")
+
+        self._throbber = ttk.Progressbar(frame, orient="horizontal", mode="indeterminate")
+        # Hidden initially, grid it when needed
+
+        self._progress_label_var = tk.StringVar(value="0/0")
         ttk.Label(frame, textvariable=self._progress_label_var, style="Progress.TLabel").grid(
             row=0, column=1, sticky="w", padx=(8, 0)
         )
+
+        # Abort button next to progress label
+        self._abort_btn = ttk.Button(frame, text="Abortar", command=self._request_abort, state="disabled")
+        self._abort_btn.grid(row=0, column=2, sticky="e", padx=(8, 4))
+
         return frame
+
+    def _request_abort(self) -> None:
+        if self._is_processing:
+            self._abort_event.set()
+            self.log_info("Solicitud de abortar recibida. Deteniendo proceso...")
+            self._abort_btn.configure(state="disabled", text="Deteniendo...")
+
+    def toggle_ui_state(self, processing: bool) -> None:
+        """Updates UI elements based on processing state."""
+        self._is_processing = processing
+        if processing:
+            self._abort_event.clear()
+            self._abort_btn.configure(state="normal", text="Abortar")
+            self._progress_bar.grid_remove()
+            self._throbber.grid(row=0, column=0, sticky="ew")
+            self._throbber.start(10)
+        else:
+            self._throbber.stop()
+            self._throbber.grid_remove()
+            self._progress_bar.grid(row=0, column=0, sticky="ew")
+            self._abort_btn.configure(state="disabled", text="Abortar")
+
+    def run_in_thread(self, target: Callable, *args, **kwargs) -> None:
+        """Executes a function in a separate thread with UI state management."""
+        if self._is_processing:
+            messagebox.showinfo("Proceso en curso", "Ya hay un proceso ejecutándose.")
+            return
+
+        def _wrapper():
+            self.after(0, lambda: self.toggle_ui_state(True))
+            try:
+                target(*args, **kwargs)
+            except Exception as e:
+                self.log_error(f"Excepción en proceso: {e}")
+                self.after(0, lambda: messagebox.showerror("Error", str(e)))
+            finally:
+                self.after(0, lambda: self.toggle_ui_state(False))
+
+        threading.Thread(target=_wrapper, daemon=True).start()
 
     def add_collapsible_log(
         self,
@@ -128,7 +189,12 @@ class BaseWindow(tk.Toplevel):
         btns_frame.pack(fill="x", pady=(6, 0))
         toggle_btn = ttk.Button(btns_frame, text="Mostrar logs")
         toggle_btn.pack(side="left")
+
+        open_window_btn = ttk.Button(btns_frame, text="Abrir en ventana")
+        open_window_btn.pack(side="left", padx=(6, 0))
+
         export_btn = ttk.Button(btns_frame, text="Exportar logs")
+
         log_frame = ttk.LabelFrame(parent, text=title)
         log_text = tk.Text(
             log_frame,
@@ -180,11 +246,32 @@ class BaseWindow(tk.Toplevel):
                 toggle_btn.configure(text="Ocultar logs")
                 visible = True
 
+        def _open_window() -> None:
+            win = tk.Toplevel(self)
+            win.title(f"Logs - {service}")
+            win.configure(background=BG)
+            win.geometry("800x600")
+            txt = tk.Text(win, wrap="word", background="#1b1b1b", foreground="#ffffff")
+            txt.pack(fill="both", expand=True)
+            current_logs = log_text.get("1.0", tk.END)
+            txt.insert("1.0", current_logs)
+            txt.configure(state="disabled")
+
+            # Hook the original log_message to update this window too (optional but nice)
+            # For simplicity, we just show current snapshot. Real-time sync would require
+            # keeping a list of active log widgets.
+
         toggle_btn.configure(command=_toggle)
         export_btn.configure(command=_export_logs)
+        open_window_btn.configure(command=_open_window)
+
         return log_text
 
     def set_progress(self, current: int, total: int) -> None:
+        # Schedule on main thread
+        self.after(0, self._set_progress_safe, current, total)
+
+    def _set_progress_safe(self, current: int, total: int) -> None:
         progress_bar = getattr(self, "_progress_bar", None)
         progress_label_var = getattr(self, "_progress_label_var", None)
         if progress_bar is None or progress_label_var is None:
@@ -196,9 +283,11 @@ class BaseWindow(tk.Toplevel):
             value = max(0, min(int(current), int(total)))
             progress_bar.configure(maximum=int(total), value=value)
             progress_label_var.set(f"{value}/{int(total)}")
-        progress_bar.update_idletasks()
 
     def set_preview(self, widget: Optional[tk.Text], content: str) -> None:
+        self.after(0, self._set_preview_safe, widget, content)
+
+    def _set_preview_safe(self, widget: Optional[tk.Text], content: str) -> None:
         if widget is None:
             return
         widget.configure(state="normal")
