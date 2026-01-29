@@ -173,7 +173,8 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
         final_dir, dir_msgs = prepare_download_dir("SCT", target_dir, cuit_repr)
 
         if not final_dir:
-            return False, "; ".join(dir_msgs)
+            error_msg = "; ".join(dir_msgs) if dir_msgs else "No se pudo preparar el directorio de descarga"
+            return False, error_msg
 
         target_path = os.path.join(final_dir, filename)
         res = descargar_archivo_minio(url, target_path)
