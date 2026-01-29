@@ -23,7 +23,6 @@ from mrbot_app.windows.mixins import ExcelHandlerMixin
 class SctWindow(BaseWindow, ExcelHandlerMixin):
     def __init__(self, master=None, config_provider=None, example_paths: Optional[Dict[str, str]] = None):
         super().__init__(master, title="Sistema de Cuentas Tributarias (SCT)", config_provider=config_provider)
-        ExcelHandlerMixin.__init__(self)
         try:
             self.iconbitmap(os.path.join("bin", "ABP-blanco-en-fondo-negro.ico"))
         except Exception:
@@ -174,7 +173,8 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
         final_dir, dir_msgs = prepare_download_dir("SCT", target_dir, cuit_repr)
 
         if not final_dir:
-             return False, "; ".join(dir_msgs)
+            error_msg = "; ".join(dir_msgs) if dir_msgs else "No se pudo preparar el directorio de descarga"
+            return False, error_msg
 
         target_path = os.path.join(final_dir, filename)
         res = descargar_archivo_minio(url, target_path)

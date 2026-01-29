@@ -165,8 +165,12 @@ class BaseWindow(tk.Toplevel):
             messagebox.showinfo("Proceso en curso", "Ya hay un proceso ejecutándose.")
             return
 
+        # Set flag immediately to prevent race condition before starting thread
+        self._is_processing = True
+
         def _wrapper():
-            self.after(0, lambda: self.toggle_ui_state(True))
+            # Update UI on main thread (flag already set)
+            self.after(0, self._update_ui_for_processing)
             try:
                 target(*args, **kwargs)
             except Exception as e:
@@ -176,6 +180,14 @@ class BaseWindow(tk.Toplevel):
                 self.after(0, lambda: self.toggle_ui_state(False))
 
         threading.Thread(target=_wrapper, daemon=True).start()
+
+    def _update_ui_for_processing(self) -> None:
+        """Updates UI elements for processing state without changing the flag."""
+        self._abort_event.clear()
+        self._abort_btn.configure(state="normal", text="Abortar")
+        self._progress_bar.grid_remove()
+        self._throbber.grid(row=0, column=0, sticky="ew")
+        self._throbber.start(10)
 
     def add_collapsible_log(
         self,

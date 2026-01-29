@@ -1,15 +1,13 @@
-import csv
 import json
 import os
 import zipfile
-from typing import Dict, List, Optional, Any
+from typing import Dict, Optional, Any
 
 import pandas as pd
 import requests
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from mrbot_app.consulta import descargar_archivos_minio_concurrente
 from mrbot_app.helpers import build_headers, ensure_trailing_slash, format_date_str, safe_get, safe_post
 from mrbot_app.windows.base import BaseWindow
 from mrbot_app.windows.mixins import ExcelHandlerMixin
@@ -19,7 +17,6 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin):
     def __init__(self, master=None, config_pane: Optional[ttk.Frame] = None, example_paths: Optional[Dict[str, str]] = None):
         provider = config_pane.get_config if config_pane else None
         super().__init__(master, title="Descarga de Mis Comprobantes", config_provider=provider)
-        ExcelHandlerMixin.__init__(self)
         try:
             self.iconbitmap(os.path.join("bin", "ABP-blanco-en-fondo-negro.ico"))
         except Exception:
@@ -64,35 +61,23 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin):
         messagebox.showinfo("Requests restantes", json.dumps(resp.get("data"), indent=2, ensure_ascii=False))
 
     def confirmar(self) -> None:
-        if not self.excel_df is not None and not self.excel_filename:
-             # Try to load if filename was manually selected (in previous code flow, but now unified)
-             # Actually ExcelHandlerMixin handles loading. If excel_df is None, we prompt.
-             # But let's check properly
-             pass
-
-        excel_to_use = self.excel_filename or self.example_paths.get("mis_comprobantes.xlsx")
-        if not excel_to_use or not os.path.exists(excel_to_use):
-             if self.excel_df is None:
-                messagebox.showerror("Error", "Primero selecciona un Excel o usa el ejemplo de mis_comprobantes.xlsx.")
-                return
-
-        # If loaded via mixin, self.excel_df is ready. If using example fallback, we might need to load it.
-        # But 'cargar_excel' sets self.excel_df.
-        # The mixin logic is: 'cargar_excel' -> sets self.excel_df and self.excel_filename.
-        # If user hasn't loaded, excel_df is None.
-
+        # Ensure an Excel file has been loaded via ExcelHandlerMixin before proceeding
         if self.excel_df is None:
-             messagebox.showerror("Error", "Carga un Excel primero.")
-             return
+            messagebox.showerror("Error", "Carga un Excel primero.")
+            return
 
         answer = messagebox.askyesno("Confirmar", "Esta accion enviara las consultas. Continuar?")
         if answer:
             self.run_in_thread(self._procesar_excel_worker)
 
     def _procesar_excel_worker(self) -> None:
-        self.log_text.configure(state="normal")
-        self.log_text.delete("1.0", tk.END)
-        self.log_text.configure(state="disabled")
+        # Clear logs using the thread-safe helper, which schedules updates on the main thread.
+        def clear_log_widget():
+            self.log_text.configure(state="normal")
+            self.log_text.delete("1.0", tk.END)
+            self.log_text.configure(state="disabled")
+        
+        self.after(0, clear_log_widget)
 
         self.log_start("Mis Comprobantes", {"modo": "masivo", "archivo": self.excel_filename})
 
@@ -108,7 +93,7 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin):
         headers = build_headers(api_key, email)
         url_api = ensure_trailing_slash(base_url) + "api/v1/mis_comprobantes/consulta"
 
-        FALLBACK_BASE_DIR = os.path.join("descargas", "mis_compobantes")
+        FALLBACK_BASE_DIR = os.path.join("descargas", "mis_comprobantes")
 
         errores = []
 
@@ -234,7 +219,8 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin):
                     self.log_info(f"Extraído CSV: {csv_path}")
                     try:
                         os.remove(zip_path)
-                    except:
+                    except OSError:
+                        # Ignorar errores al eliminar el ZIP temporal; falla de limpieza no es crítica
                         pass
                 else:
                     self.log_error(f"Fallo extracción de ZIP {zip_path}")

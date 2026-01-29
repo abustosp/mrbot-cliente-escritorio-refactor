@@ -1,4 +1,3 @@
-import os
 import tkinter as tk
 from datetime import date
 from typing import Any, Dict, List, Optional
@@ -139,7 +138,31 @@ class DownloadHandlerMixin:
 
     def _process_downloads(self, data: Any, module_name: str, cuit_repr: str, override_dir: Optional[str] = None, service_key: str = "archivo") -> tuple[int, List[str], Optional[str]]:
         """
-        Procesa la descarga de archivos desde la respuesta data.
+        Procesa la descarga de archivos desde la respuesta ``data``.
+
+        Parámetros
+        ----------
+        data : Any
+            Respuesta o estructura que contiene la información de los archivos a descargar.
+        module_name : str
+            Nombre del módulo que se usará para construir la carpeta de descarga.
+        cuit_repr : str
+            Representación de CUIT que se usará para construir la carpeta de descarga.
+        override_dir : Optional[str], opcional
+            Carpeta de descarga a usar en lugar de ``self.download_dir_var``. Si es ``None``,
+            se utiliza el valor configurado en la interfaz.
+        service_key : str, opcional
+            Clave del campo dentro de ``data`` que contiene la información de los archivos
+            para MinIO. Se usa cuando se recurre a ``_extract_links_generic``.
+            Por defecto es ``"archivo"``.
+
+        Returns
+        -------
+        tuple[int, List[str], Optional[str]]
+            Una tupla con:
+            - cantidad de descargas exitosas,
+            - lista de mensajes de error (si los hubiera),
+            - ruta de la carpeta de descarga usada (o ``None`` si no hubo descargas).
         """
         # Intentar usar método específico de la clase si existe, sino genérico
         if hasattr(self, "_extract_links"):

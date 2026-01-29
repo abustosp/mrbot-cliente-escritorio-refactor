@@ -17,8 +17,6 @@ class SifereWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
 
     def __init__(self, master=None, config_provider=None, example_paths: Optional[Dict[str, str]] = None):
         super().__init__(master, title="SIFERE consultas", config_provider=config_provider)
-        ExcelHandlerMixin.__init__(self)
-        DownloadHandlerMixin.__init__(self)
         try:
             self.iconbitmap(os.path.join("bin", "ABP-blanco-en-fondo-negro.ico"))
         except Exception:
@@ -219,7 +217,7 @@ class SifereWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         url = ensure_trailing_slash(base_url) + "api/v1/sifere/consulta"
         rows: List[Dict[str, Any]] = []
 
-        self.clear_logs()
+        self.after(0, self.clear_logs)
         self.log_start("SIFERE", {"modo": "masivo", "filas": len(df_to_process)})
         total = len(df_to_process)
         self.set_progress(0, total)

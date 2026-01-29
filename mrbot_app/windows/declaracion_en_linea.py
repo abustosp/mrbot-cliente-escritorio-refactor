@@ -21,8 +21,6 @@ class DeclaracionEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMix
 
     def __init__(self, master=None, config_provider=None, example_paths: Optional[Dict[str, str]] = None):
         super().__init__(master, title="DDJJ en Linea", config_provider=config_provider)
-        ExcelHandlerMixin.__init__(self)
-        DownloadHandlerMixin.__init__(self)
         try:
             self.iconbitmap(os.path.join("bin", "ABP-blanco-en-fondo-negro.ico"))
         except Exception:
@@ -133,7 +131,9 @@ class DeclaracionEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMix
             if isinstance(url, str) and url.strip():
                 link = build_link(url, None, "ddjj", index)
                 if link:
-                    base = os.path.splitext(link["filename"][0] if isinstance(link["filename"], list) else link["filename"])[0]
+                    base = os.path.splitext(
+                        link["filename"] if isinstance(link["filename"], str) else link["filename"][0]
+                    )[0]
                     return f"{base}.json"
         periodo = None
         datos = item.get("datos")

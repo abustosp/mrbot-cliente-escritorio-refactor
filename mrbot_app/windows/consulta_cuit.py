@@ -14,7 +14,6 @@ from mrbot_app.windows.mixins import ExcelHandlerMixin
 class ConsultaCuitWindow(BaseWindow, ExcelHandlerMixin):
     def __init__(self, master=None, config_provider=None, example_paths: Optional[Dict[str, str]] = None):
         super().__init__(master, title="Consulta de CUIT", config_provider=config_provider)
-        ExcelHandlerMixin.__init__(self)
         try:
             self.iconbitmap(os.path.join("bin", "ABP-blanco-en-fondo-negro.ico"))
         except Exception:
@@ -77,7 +76,7 @@ class ConsultaCuitWindow(BaseWindow, ExcelHandlerMixin):
         # Assuming we send all at once for now.
 
         if self._abort_event.is_set():
-             return
+            return
 
         cuits = [str(row.get("cuit", "")).strip() for _, row in df_to_process.iterrows() if str(row.get("cuit", "")).strip()]
         total = len(cuits)
