@@ -52,26 +52,40 @@ class ApocrifosWindow(BaseWindow, ExcelHandlerMixin):
         headers = build_headers(api_key, email)
         cuit = self.cuit_var.get().strip()
         url = ensure_trailing_slash(base_url) + f"api/v1/apoc/consulta/{cuit}"
+
+        self.run_in_thread(self._worker_individual, url, headers)
+
+    def _worker_individual(self, url, headers):
         resp = safe_get(url, headers)
         self.set_preview(self.result_box, json.dumps(resp, indent=2, ensure_ascii=False))
 
     def procesar_excel(self) -> None:
         if self.excel_df is None or self.excel_df.empty:
-            self.set_progress(0, 0)
             messagebox.showerror("Error", "Carga un Excel primero.")
             return
-        base_url, api_key, email = self._get_config()
-        headers = build_headers(api_key, email)
-        rows: List[Dict[str, Any]] = []
 
         # Use filtered DF if possible (supports 'procesar') or full DF
         df_to_process = self._filter_procesar(self.excel_df)
         if df_to_process is None: # Should not happen if excel_df is not None
              df_to_process = self.excel_df
 
-        total = len(df_to_process)
+        base_url, api_key, email = self._get_config()
+        headers = build_headers(api_key, email)
+
+        # Copy for thread safety
+        df_copy = df_to_process.copy()
+
+        self.run_in_thread(self._worker_excel, df_copy, base_url, headers)
+
+    def _worker_excel(self, df, base_url, headers):
+        rows: List[Dict[str, Any]] = []
+        total = len(df)
         self.set_progress(0, total)
-        for idx, (_, row) in enumerate(df_to_process.iterrows(), start=1):
+
+        for idx, (_, row) in enumerate(df.iterrows(), start=1):
+            if self._abort_event.is_set():
+                break
+
             cuit = str(row.get("cuit", "")).strip()
             url = ensure_trailing_slash(base_url) + f"api/v1/apoc/consulta/{cuit}"
             resp = safe_get(url, headers)
@@ -85,5 +99,6 @@ class ApocrifosWindow(BaseWindow, ExcelHandlerMixin):
                 }
             )
             self.set_progress(idx, total)
+
         out_df = pd.DataFrame(rows)
         self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))

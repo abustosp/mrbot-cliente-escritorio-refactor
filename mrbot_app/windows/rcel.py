@@ -218,8 +218,13 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
             "minio_upload": bool(self.minio_var.get()),
         }
         url = ensure_trailing_slash(base_url) + "api/v1/rcel/consulta"
+
         self.clear_logs()
         self.log_start("RCEL", {"modo": "individual"})
+
+        self.run_in_thread(self._worker_individual, url, headers, payload)
+
+    def _worker_individual(self, url, headers, payload):
         self.log_separator(payload["representado_cuit"])
         self.log_request(self._redact(payload))
         resp = safe_post(url, headers, payload)
@@ -248,28 +253,46 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
             self.log_error(f"Descarga: {err}")
         self.set_preview(self.result_box, json.dumps(resp, indent=2, ensure_ascii=False))
 
+
     def procesar_excel(self) -> None:
         if self.excel_df is None or self.excel_df.empty:
-            self.set_progress(0, 0)
             messagebox.showerror("Error", "Carga un Excel primero.")
             return
-        base_url, api_key, email = self._get_config()
-        headers = build_headers(api_key, email)
-        url = ensure_trailing_slash(base_url) + "api/v1/rcel/consulta"
-        rows: List[Dict[str, Any]] = []
+
         df_to_process = self._filter_procesar(self.excel_df)
         if df_to_process is None or df_to_process.empty:
-            self.set_progress(0, 0)
             messagebox.showwarning("Sin filas a procesar", "No hay filas marcadas con procesar=SI.")
             return
 
+        base_url, api_key, email = self._get_config()
+        headers = build_headers(api_key, email)
+        url = ensure_trailing_slash(base_url) + "api/v1/rcel/consulta"
+
+        # Capture defaults and options
+        default_desde = format_date_str(self.desde_var.get().strip())
+        default_hasta = format_date_str(self.hasta_var.get().strip())
+        b64_pdf = bool(self.b64_var.get())
+        minio_upload = bool(self.minio_var.get())
+
+        # Copy for thread safety
+        df_copy = df_to_process.copy()
+
         self.clear_logs()
-        self.log_start("RCEL", {"modo": "masivo", "filas": len(df_to_process)})
-        total = len(df_to_process)
+        self.log_start("RCEL", {"modo": "masivo", "filas": len(df_copy)})
+
+        self.run_in_thread(self._worker_excel, df_copy, url, headers, default_desde, default_hasta, b64_pdf, minio_upload)
+
+    def _worker_excel(self, df, url, headers, default_desde, default_hasta, b64_pdf, minio_upload):
+        rows: List[Dict[str, Any]] = []
+        total = len(df)
         self.set_progress(0, total)
-        for idx, (_, row) in enumerate(df_to_process.iterrows(), start=1):
-            desde = format_date_str(row.get("desde", "")) or format_date_str(self.desde_var.get().strip())
-            hasta = format_date_str(row.get("hasta", "")) or format_date_str(self.hasta_var.get().strip())
+
+        for idx, (_, row) in enumerate(df.iterrows(), start=1):
+            if self._abort_event.is_set():
+                break
+
+            desde = format_date_str(row.get("desde", "")) or default_desde
+            hasta = format_date_str(row.get("hasta", "")) or default_hasta
             row_download = str(
                 row.get("ubicacion_descarga")
                 or row.get("path_descarga")
@@ -285,8 +308,8 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
                 "nombre_rcel": str(row.get("nombre_rcel", "")).strip(),
                 "representado_cuit": cuit_repr,
                 "clave": str(row.get("clave", "")),
-                "b64_pdf": bool(self.b64_var.get()),
-                "minio_upload": bool(self.minio_var.get()),
+                "b64_pdf": b64_pdf,
+                "minio_upload": minio_upload,
             }
             self.log_request(self._redact(payload))
             resp = safe_post(url, headers, payload)
@@ -326,5 +349,6 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
                 }
             )
             self.set_progress(idx, total)
+
         out_df = pd.DataFrame(rows)
         self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))

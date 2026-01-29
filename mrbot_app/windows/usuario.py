@@ -76,6 +76,10 @@ class UsuarioWindow(BaseWindow):
         if not collected:
             return
         base_url, api_key, email = collected
+
+        self.run_in_thread(self._worker_crear, base_url, api_key, email)
+
+    def _worker_crear(self, base_url, api_key, email):
         headers = build_headers(api_key, email)
         url = base_url + "api/v1/user/"
         payload = {"mail": email}
@@ -87,6 +91,10 @@ class UsuarioWindow(BaseWindow):
         if not collected:
             return
         base_url, api_key, email = collected
+
+        self.run_in_thread(self._worker_reset, base_url, api_key, email)
+
+    def _worker_reset(self, base_url, api_key, email):
         headers = build_headers(api_key, email)
         url = base_url + f"api/v1/user/reset-key/?email={email}"
         resp = safe_post(url, headers, payload={})
@@ -97,6 +105,10 @@ class UsuarioWindow(BaseWindow):
         if not collected:
             return
         base_url, api_key, email = collected
+
+        self.run_in_thread(self._worker_consultas, base_url, api_key, email)
+
+    def _worker_consultas(self, base_url, api_key, email):
         headers = build_headers(api_key, email)
         url = base_url + f"api/v1/user/consultas/{email}"
         resp = safe_get(url, headers)

@@ -185,6 +185,10 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             payload["pdf"] = True
         url = ensure_trailing_slash(base_url) + "api/v1/ccma/consulta"
         self.clear_logs()
+
+        self.run_in_thread(self._worker_individual, url, headers, payload, pdf_requested)
+
+    def _worker_individual(self, url, headers, payload, pdf_requested):
         safe_payload = dict(payload)
         safe_payload["clave_representante"] = "***"
         cuit_label = payload["cuit_representado"] or payload["cuit_representante"]
@@ -229,11 +233,11 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
         url = ensure_trailing_slash(base_url) + "api/v1/ccma/consulta"
-        rows: List[Dict[str, Any]] = []
-        movimientos_rows: List[Dict[str, Any]] = []
-        movimientos_requested = False
+
+        # Capture options
         movimientos_default = bool(self.opt_movimientos.get())
-        pdf_default: Optional[bool] = True if self.opt_pdf.get() else None
+        pdf_default = bool(self.opt_pdf.get())
+        proxy_default = bool(self.opt_proxy.get())
 
         df_to_process = self._filter_procesar(self.excel_df)
         if df_to_process is None or df_to_process.empty:
@@ -241,27 +245,46 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             messagebox.showwarning("Sin filas a procesar", "No hay filas marcadas con procesar=SI.")
             return
 
+        # Copy for thread safety
+        df_copy = df_to_process.copy()
+
         self.clear_logs()
-        self.log_start("CCMA", {"modo": "masivo", "filas": len(df_to_process)})
-        total = len(df_to_process)
+        self.log_start("CCMA", {"modo": "masivo", "filas": len(df_copy)})
+
+        self.run_in_thread(self._worker_excel, df_copy, url, headers, movimientos_default, pdf_default, proxy_default)
+
+    def _worker_excel(self, df, url, headers, movimientos_default, pdf_default, proxy_default):
+        rows: List[Dict[str, Any]] = []
+        movimientos_rows: List[Dict[str, Any]] = []
+        movimientos_requested = False
+
+        total = len(df)
         self.set_progress(0, total)
-        for idx, (_, row) in enumerate(df_to_process.iterrows(), start=1):
+
+        for idx, (_, row) in enumerate(df.iterrows(), start=1):
+            if self._abort_event.is_set():
+                break
+
             cuit_rep = str(row.get("cuit_representante", "")).strip()
             cuit_repr = str(row.get("cuit_representado", "")).strip()
             movimientos_flag = parse_bool_cell(row.get("movimientos"), default=movimientos_default)
             movimientos_requested = movimientos_requested or movimientos_flag
+
+            # Special case for pdf flag from excel which could be None to use default
             pdf_flag = self._parse_optional_bool(row.get("pdf"))
             if pdf_flag is None:
                 pdf_flag = pdf_default
+
             payload = {
                 "cuit_representante": cuit_rep,
                 "clave_representante": str(row.get("clave_representante", "")),
                 "cuit_representado": cuit_repr,
-                "proxy_request": bool(self.opt_proxy.get()),
+                "proxy_request": proxy_default,
                 "movimientos": movimientos_flag
             }
-            if pdf_flag is not None:
-                payload["pdf"] = pdf_flag
+            if pdf_flag:
+                payload["pdf"] = True
+
             safe_payload = dict(payload)
             safe_payload["clave_representante"] = "***"
             self.log_separator(cuit_repr or cuit_rep)
@@ -347,6 +370,11 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
                     "error": json.dumps(resp, ensure_ascii=False)
                 })
             self.set_progress(idx, total)
+
+        # Post processing involves creating DataFrame and saving Excel, which is safe in thread as it doesn't touch UI directly except via log_error
+        self._post_process_excel(rows, movimientos_rows, movimientos_requested)
+
+    def _post_process_excel(self, rows, movimientos_rows, movimientos_requested):
         out_df = pd.DataFrame(rows)
         movimientos_df = pd.DataFrame(movimientos_rows)
         numeric_fields_ccma = [
@@ -400,9 +428,11 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
                     if hoja_nombre == "Movimientos":
                         autoajustar_columnas(hoja)
         except Exception as exc:
-            messagebox.showerror("Error", f"No se pudo guardar ReporteCCMA.xlsx: {exc}")
+            self.log_error(f"Error guardando ReporteCCMA.xlsx: {exc}")
             return
         self.log_info(f"Reporte generado: {out_path}")
+
+        # Only preview update should be scheduled to main thread
         preview_text = df_preview(out_df, rows=min(20, len(out_df)))
         if not movimientos_requested and movimientos_df.empty:
             preview_text += "\n\nMovimientos: no se solicitaron."

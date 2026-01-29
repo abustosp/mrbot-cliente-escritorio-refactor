@@ -146,8 +146,14 @@ class MisFacilidadesWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         }
         url = ensure_trailing_slash(base_url) + "api/v1/mis_facilidades/consulta"
         self.clear_logs()
+
+        self.run_in_thread(self._worker_individual, url, headers, payload)
+
+    def _worker_individual(self, url, headers, payload):
         safe_payload = dict(payload)
         safe_payload["clave"] = "***"
+        cuit_repr = payload.get("cuit_representado")
+
         self.log_start("Mis Facilidades", {"modo": "individual"})
         self.log_separator(cuit_repr or payload["cuit_login"])
         self.log_request(safe_payload)
@@ -169,24 +175,35 @@ class MisFacilidadesWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
 
     def procesar_excel(self) -> None:
         if self.excel_df is None or self.excel_df.empty:
-            self.set_progress(0, 0)
             messagebox.showerror("Error", "Carga un Excel primero.")
             return
-        base_url, api_key, email = self._get_config()
-        headers = build_headers(api_key, email)
-        url = ensure_trailing_slash(base_url) + "api/v1/mis_facilidades/consulta"
-        rows: List[Dict[str, Any]] = []
+
         df_to_process = self._filter_procesar(self.excel_df)
         if df_to_process is None or df_to_process.empty:
-            self.set_progress(0, 0)
             messagebox.showwarning("Sin filas a procesar", "No hay filas marcadas con procesar=SI.")
             return
 
+        base_url, api_key, email = self._get_config()
+        headers = build_headers(api_key, email)
+        url = ensure_trailing_slash(base_url) + "api/v1/mis_facilidades/consulta"
+
+        # Copy for thread safety
+        df_copy = df_to_process.copy()
+
         self.clear_logs()
-        self.log_start("Mis Facilidades", {"modo": "masivo", "filas": len(df_to_process)})
-        total = len(df_to_process)
+        self.log_start("Mis Facilidades", {"modo": "masivo", "filas": len(df_copy)})
+
+        self.run_in_thread(self._worker_excel, df_copy, url, headers)
+
+    def _worker_excel(self, df, url, headers):
+        rows: List[Dict[str, Any]] = []
+        total = len(df)
         self.set_progress(0, total)
-        for idx, (_, row) in enumerate(df_to_process.iterrows(), start=1):
+
+        for idx, (_, row) in enumerate(df.iterrows(), start=1):
+            if self._abort_event.is_set():
+                break
+
             cuit_login = str(row.get("cuit_login", "")).strip()
             cuit_repr = self._optional_value(str(row.get("cuit_representado", "")))
             row_download = str(row.get("ubicacion_descarga") or row.get("path_descarga") or row.get("carpeta_descarga") or "").strip()
