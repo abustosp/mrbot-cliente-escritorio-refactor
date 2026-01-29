@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import unquote, urlparse
 
 from mrbot_app.consulta import descargar_archivo_minio
+from mrbot_app.helpers import get_unique_filename
 
 
 def sanitize_identifier(value: str, fallback: str = "desconocido") -> str:
@@ -64,10 +65,6 @@ def prepare_download_dir(module_name: str, desired_path: str, cuit_repr: str) ->
     return None, messages
 
 
-def _unique_path(dest_dir: str, filename: str) -> str:
-    return os.path.join(dest_dir, filename)
-
-
 def download_links(links: List[Dict[str, str]], dest_dir: Optional[str]) -> Tuple[int, List[str]]:
     if not dest_dir:
         return 0, ["No hay ruta de descarga disponible."]
@@ -79,7 +76,10 @@ def download_links(links: List[Dict[str, str]], dest_dir: Optional[str]) -> Tupl
         if not url:
             errors.append(f"{filename}: URL vacía")
             continue
-        target_path = _unique_path(dest_dir, filename)
+        # Use get_unique_filename for collision handling (adds timestamp if needed)
+        filename_unique = get_unique_filename(dest_dir, filename)
+        target_path = os.path.join(dest_dir, filename_unique)
+
         res = descargar_archivo_minio(url, target_path)
         if res.get("success"):
             successes += 1

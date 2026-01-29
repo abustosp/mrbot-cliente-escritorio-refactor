@@ -2,6 +2,7 @@ import json
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import unquote, urlparse
 
 import pandas as pd
 import tkinter as tk
@@ -12,6 +13,7 @@ from mrbot_app.helpers import (
     build_headers,
     df_preview,
     ensure_trailing_slash,
+    get_unique_filename,
     parse_bool_cell,
     safe_post,
 )
@@ -167,7 +169,15 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
         if not url:
             return False, f"Link inexistente o vacío ({' / '.join(minio_keys)})"
 
-        filename = self._ensure_extension(base_name, ext)
+        # Logic for filename fallback
+        if not base_name or not base_name.strip():
+             # Fallback to name from URL
+             base_from_url = unquote(os.path.basename(urlparse(url).path))
+             if not base_from_url:
+                 base_from_url = f"{prefix}_{fmt}"
+             filename = self._ensure_extension(base_from_url, ext)
+        else:
+             filename = self._ensure_extension(base_name, ext)
 
         target_dir = dest_dir or ""
 
@@ -176,7 +186,10 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
         if not final_dir:
              return False, "; ".join(dir_msgs)
 
-        target_path = os.path.join(final_dir, filename)
+        # Collision handling
+        filename_unique = get_unique_filename(final_dir, filename)
+        target_path = os.path.join(final_dir, filename_unique)
+
         res = descargar_archivo_minio(url, target_path)
         if res.get("success"):
             return True, None
@@ -396,17 +409,17 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
                 "deudas": {
                     "enabled": include_deuda,
                     "path": str(row.get("ubicacion_deuda") or row.get("ubicacion_deudas") or ""),
-                    "name": str(row.get("nombre_deuda") or row.get("nombre_deudas") or "Deudas"),
+                    "name": str(row.get("nombre_deuda") or row.get("nombre_deudas") or ""),
                 },
                 "vencimientos": {
                     "enabled": include_venc,
                     "path": str(row.get("ubicacion_vencimientos") or ""),
-                    "name": str(row.get("nombre_vencimientos") or "Vencimientos"),
+                    "name": str(row.get("nombre_vencimientos") or ""),
                 },
                 "ddjj_pendientes": {
                     "enabled": include_ddjj,
                     "path": str(row.get("ubicacion_ddjj") or row.get("ubicacion_presentacion_ddjj") or ""),
-                    "name": str(row.get("nombre_ddjj") or row.get("nombre_presentacion_ddjj") or "DDJJ"),
+                    "name": str(row.get("nombre_ddjj") or row.get("nombre_presentacion_ddjj") or ""),
                 },
             }
             payload = {
