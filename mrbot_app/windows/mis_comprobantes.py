@@ -72,11 +72,12 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin):
 
     def _procesar_excel_worker(self) -> None:
         # Clear logs using the thread-safe helper, which schedules updates on the main thread.
-        self.after(0, lambda: (
-            self.log_text.configure(state="normal"),
-            self.log_text.delete("1.0", tk.END),
+        def clear_log_widget():
+            self.log_text.configure(state="normal")
+            self.log_text.delete("1.0", tk.END)
             self.log_text.configure(state="disabled")
-        ))
+        
+        self.after(0, clear_log_widget)
 
         self.log_start("Mis Comprobantes", {"modo": "masivo", "archivo": self.excel_filename})
 
