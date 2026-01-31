@@ -46,9 +46,13 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
         ttk.Button(btn_frame, text="Seleccionar Excel", command=self.cargar_excel).pack(side="left", padx=4)
         ttk.Button(btn_frame, text="Ver Ejemplo Planilla", command=lambda: self.abrir_ejemplo_key("control_monotributistas.xlsx")).pack(side="left", padx=4)
         ttk.Button(btn_frame, text="Ver Ejemplo Categorias", command=lambda: self.abrir_ejemplo_key("Categorias.xlsx")).pack(side="left", padx=4)
+        ttk.Button(btn_frame, text="Previsualizar Excel", command=lambda: self.previsualizar_excel("Previsualización Control Monotributistas")).pack(side="left", padx=4)
 
         self.lbl_excel = ttk.Label(file_frame, text="Ningún archivo seleccionado")
         self.lbl_excel.pack(anchor="w", padx=8, pady=4)
+
+        self.preview = self.add_preview(container, height=6, show=False)
+        self.set_preview(self.preview, "Selecciona un Excel para ver la previsualización.")
 
         # Actions
         actions_frame = ttk.LabelFrame(container, text="Acciones")
