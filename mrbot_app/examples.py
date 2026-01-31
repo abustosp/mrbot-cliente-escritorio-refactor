@@ -1,7 +1,7 @@
 import os
 import sys
 import pathlib
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Union
 
 # Ajustar sys.path si se ejecuta directamente (python mrbot_app/examples.py)
 if __package__ is None or __package__ == "":
@@ -21,7 +21,9 @@ def ensure_example_excels() -> Dict[str, str]:
     Retorna un dict con el nombre corto -> ruta.
     """
     os.makedirs(EXAMPLE_DIR, exist_ok=True)
-    examples: Dict[str, Tuple[str, pd.DataFrame]] = {
+
+    # DataFrames for single-sheet Excels
+    examples: Dict[str, pd.DataFrame] = {
         "mis_comprobantes.xlsx": pd.DataFrame(
             [
                 {
@@ -259,9 +261,49 @@ def ensure_example_excels() -> Dict[str, str]:
             ]
         ),
         "consulta_cuit.xlsx": pd.DataFrame([{"cuit": "20333444555"}, {"cuit": "20987654321"}]),
+        "control_monotributistas.xlsx": pd.DataFrame(
+            [
+                {
+                    "CUIT_Representante": "20123456789",
+                    "Clave_representante": "clave_demo",
+                    "CUIT_Representado": "20987654321",
+                    "Denominacion_MC": "Empresa Demo MC",
+                    "Denominacion_RCEL": "Empresa Demo RCEL",
+                    "Descarga_MC": "SI",
+                    "Descarga_MC_emitidos": "SI",
+                    "Descarga_MC_recibidos": "NO",
+                    "Desde_MC": "01/01/2024",
+                    "Hasta_MC": "31/12/2024",
+                    "Descarga_RCEL": "SI",
+                    "Desde_RCEL": "01/01/2024",
+                    "Hasta_RCEL": "31/12/2024",
+                    "Ubicacion_Descarga_MC": "",
+                    "Ubicacion_Descarga_RCEL": ""
+                },
+                {
+                    "CUIT_Representante": "20111111111",
+                    "Clave_representante": "clave_no",
+                    "CUIT_Representado": "20999999999",
+                    "Denominacion_MC": "Empresa NO MC",
+                    "Denominacion_RCEL": "Empresa NO RCEL",
+                    "Descarga_MC": "NO",
+                    "Descarga_MC_emitidos": "NO",
+                    "Descarga_MC_recibidos": "NO",
+                    "Desde_MC": "01/01/2024",
+                    "Hasta_MC": "31/12/2024",
+                    "Descarga_RCEL": "NO",
+                    "Desde_RCEL": "01/01/2024",
+                    "Hasta_RCEL": "31/12/2024",
+                    "Ubicacion_Descarga_MC": "",
+                    "Ubicacion_Descarga_RCEL": ""
+                },
+            ]
+        ),
     }
 
     paths: Dict[str, str] = {}
+
+    # Process standard files
     for name, df in examples.items():
         path = os.path.join(EXAMPLE_DIR, name)
         paths[name] = path
@@ -274,6 +316,9 @@ def ensure_example_excels() -> Dict[str, str]:
                     should_write = True
             except Exception:
                 should_write = True
+
+        # Override for control_monotributistas to always ensure columns match if needed, but for now standard check is fine
+
         if should_write:
             try:
                 df.to_excel(path, index=False)
@@ -282,16 +327,45 @@ def ensure_example_excels() -> Dict[str, str]:
                 pass
         else:
             _format_excel(path)
+
+    # Process Categorias.xlsx (Multi-sheet)
+    path_categorias = os.path.join(EXAMPLE_DIR, "Categorias.xlsx")
+    paths["Categorias.xlsx"] = path_categorias
+    if not os.path.exists(path_categorias):
+        try:
+            with pd.ExcelWriter(path_categorias, engine='openpyxl') as writer:
+                # Sheet Categorias
+                df_cat = pd.DataFrame({
+                    "Categoria": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"],
+                    "Ingresos brutos": [2108288.01, 3133941.63, 4387518.23, 5449094.55, 6416528.72, 8020660.9, 9624793.05, 11916410.45, 13337213.22, 15285088.06, 16957968.71]
+                })
+                df_cat.to_excel(writer, sheet_name="Categorias", index=False)
+
+                # Sheet Rango de Fechas
+                # A2: Start Date, B2: End Date
+                # We can create a dataframe that puts values in row 1 (since header is row 0)
+                # Or just a dataframe with "Desde", "Hasta" and one row
+                df_fechas = pd.DataFrame({
+                    "Desde": ["01/01/2024"],
+                    "Hasta": ["31/12/2024"]
+                })
+                # The code reads A2 and B2, which corresponds to the first data row if headers are present
+                df_fechas.to_excel(writer, sheet_name="Rango de Fechas", index=False)
+
+            _format_excel(path_categorias)
+        except Exception as e:
+            pass
+
     return paths
 
 
 def _format_excel(path: str) -> None:
     try:
         wb = load_workbook(path)
-        ws = wb.active
-        aplicar_formato_encabezado(ws)
-        autoajustar_columnas(ws)
-        agregar_filtros(ws)
+        for ws in wb.worksheets:
+            aplicar_formato_encabezado(ws)
+            autoajustar_columnas(ws)
+            # agregar_filtros(ws) # Apply only to some? Safe to apply to all generally
         wb.save(path)
     except Exception:
         pass

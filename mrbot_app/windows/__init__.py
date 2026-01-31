@@ -10,6 +10,7 @@ from mrbot_app.windows.rcel import RcelWindow
 from mrbot_app.windows.sifere import SifereWindow
 from mrbot_app.windows.sct import SctWindow
 from mrbot_app.windows.usuario import UsuarioWindow
+from mrbot_app.windows.control_monotributistas import ControlMonotributistasWindow
 
 __all__ = [
     "ApocrifosWindow",
@@ -24,4 +25,5 @@ __all__ = [
     "SifereWindow",
     "SctWindow",
     "UsuarioWindow",
+    "ControlMonotributistasWindow",
 ]
