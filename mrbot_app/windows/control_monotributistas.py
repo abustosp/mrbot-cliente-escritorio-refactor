@@ -63,8 +63,8 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
 
     def cargar_excel(self) -> None:
         super().cargar_excel()
-        if self.excel_path:
-            self.lbl_excel.configure(text=f"Archivo: {os.path.basename(self.excel_path)}", foreground="green")
+        if self.excel_filename:
+            self.lbl_excel.configure(text=f"Archivo: {os.path.basename(self.excel_filename)}", foreground="green")
 
     def clear_logs(self) -> None:
         self.log_text.configure(state="normal")
