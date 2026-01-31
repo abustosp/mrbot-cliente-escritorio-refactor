@@ -106,15 +106,9 @@ def procesar_descarga_mc(
 
         # Determine download directory
         if not ubicacion_base:
-            ubicacion_base = crear_directorio_seguro(
-                "", # Let it fallback
-                nombre_representado,
-                representado_cuit=cuit_representado,
-                cuit_representante=cuit_representante,
-                log_fn=log_fn
-            )
-        else:
-             os.makedirs(ubicacion_base, exist_ok=True)
+            ubicacion_base = os.path.join("descargas", "Control_Monotributistas", "Mis Comprobantes", cuit_representado)
+
+        os.makedirs(ubicacion_base, exist_ok=True)
 
         # Standard structure from external repo: [Base]/extraido/*.csv
         # But we need to download ZIPs first.
@@ -269,8 +263,8 @@ def procesar_descarga_rcel(
 
         # Determine download directory
         if not ubicacion_base:
-            # Fallback structure: descargas/RCEL/[CUIT]
-            ubicacion_base = os.path.join("descargas", "RCEL", cuit_representado)
+            # Fallback structure: descargas/Control_Monotributistas/RCEL/[CUIT]
+            ubicacion_base = os.path.join("descargas", "Control_Monotributistas", "RCEL", cuit_representado)
 
         os.makedirs(ubicacion_base, exist_ok=True)
 
