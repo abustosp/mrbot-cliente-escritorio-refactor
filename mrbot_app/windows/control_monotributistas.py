@@ -183,7 +183,11 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
             self.log_error("No se encontraron archivos para procesar.")
             return
 
-        output_file = "Reporte Recategorizaciones de Monotributistas.xlsx"
+        # Output directory: descargas/Control_Monotributistas
+        output_dir = os.path.join("descargas", "Control_Monotributistas")
+        os.makedirs(output_dir, exist_ok=True)
+
+        output_file = os.path.join(output_dir, "Reporte Recategorizaciones de Monotributistas.xlsx")
 
         generar_reporte_control(
             archivos_mc,

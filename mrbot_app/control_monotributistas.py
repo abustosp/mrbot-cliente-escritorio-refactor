@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from typing import Optional, Callable, Dict, Any, List, Tuple
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 
 from openpyxl import load_workbook, Workbook
 
@@ -123,15 +123,8 @@ def procesar_descarga_mc(
 
         if descargar_emitidos and response.get("mis_comprobantes_emitidos_url_minio"):
             url = response["mis_comprobantes_emitidos_url_minio"]
-            zip_path = os.path.join(ubicacion_base, "Emitidos.zip")
-            csv_path = os.path.join(extraido_dir, "MCE.csv") # Name might need timestamp/random to avoid collisions if multiple
-            # External repo extracts with "unzip_and_rename" logic or similar.
-            # Here we use extraer_csv_de_zip which takes dest csv path.
-            # To avoid overwriting if running multiple times/types, we might want to preserve name from URL or add suffix.
-            # But control logic expects to find CSVs in 'extraido' folder.
-
-            # Using filename from URL
-            filename_zip = os.path.basename(urlparse(url).path) or "Emitidos.zip"
+            # Using filename from URL with unquote to handle URL encoding
+            filename_zip = unquote(os.path.basename(urlparse(url).path)) or "Emitidos.zip"
             zip_path = os.path.join(ubicacion_base, filename_zip)
 
             # Name for extracted CSV: same as zip base name
@@ -142,7 +135,7 @@ def procesar_descarga_mc(
 
         if descargar_recibidos and response.get("mis_comprobantes_recibidos_url_minio"):
             url = response["mis_comprobantes_recibidos_url_minio"]
-            filename_zip = os.path.basename(urlparse(url).path) or "Recibidos.zip"
+            filename_zip = unquote(os.path.basename(urlparse(url).path)) or "Recibidos.zip"
             zip_path = os.path.join(ubicacion_base, filename_zip)
             csv_name = os.path.splitext(filename_zip)[0] + ".csv"
             csv_path = os.path.join(extraido_dir, csv_name)
@@ -280,7 +273,7 @@ def procesar_descarga_rcel(
         # Download PDFs
         download_items = []
         for url, meta in pdf_items:
-            filename = os.path.basename(urlparse(url).path) or "factura.pdf"
+            filename = unquote(os.path.basename(urlparse(url).path)) or "factura.pdf"
             dest = os.path.join(ubicacion_base, filename)
             download_items.append({"url": url, "destino": dest})
 
