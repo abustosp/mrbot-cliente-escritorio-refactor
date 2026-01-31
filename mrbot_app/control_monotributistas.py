@@ -57,19 +57,19 @@ def procesar_descarga_mc(
     Procesa la descarga de Mis Comprobantes para un contribuyente.
     Utiliza las variables de entorno para credenciales (como consulta_mc original).
     """
-    cuit_representante = str(row.get('CUIT_Representante', '')).strip()
-    clave_representante = str(row.get('Clave_representante', '')).strip()
-    cuit_representado = str(row.get('CUIT_Representado', '')).strip()
-    nombre_representado = str(row.get('Denominacion_MC', '')).strip() or "Contribuyente"
+    cuit_representante = str(row.get('cuit_representante', '')).strip()
+    clave_representante = str(row.get('clave_representante', '')).strip()
+    cuit_representado = str(row.get('cuit_representado', '')).strip()
+    nombre_representado = str(row.get('denominacion_mc', '')).strip() or "Contribuyente"
 
-    desde = format_date_str(row.get('Desde_MC', ''))
-    hasta = format_date_str(row.get('Hasta_MC', ''))
+    desde = format_date_str(row.get('desde_mc', ''))
+    hasta = format_date_str(row.get('hasta_mc', ''))
 
-    descarga_MC = _normalizar_si_no(row.get('Descarga_MC'))
-    descarga_MC_emitidos = _normalizar_si_no(row.get('Descarga_MC_emitidos'))
-    descarga_MC_recibidos = _normalizar_si_no(row.get('Descarga_MC_recibidos'))
+    descarga_MC = _normalizar_si_no(row.get('descarga_mc'))
+    descarga_MC_emitidos = _normalizar_si_no(row.get('descarga_mc_emitidos'))
+    descarga_MC_recibidos = _normalizar_si_no(row.get('descarga_mc_recibidos'))
 
-    ubicacion_base = str(row.get('Ubicacion_Descarga_MC', '')).strip()
+    ubicacion_base = str(row.get('ubicacion_descarga_mc', '')).strip()
 
     if descarga_MC != 'si':
         _log_info(f"Saltando descarga MC para CUIT {cuit_representado}", log_fn)
@@ -217,16 +217,16 @@ def procesar_descarga_rcel(
     """
     base_url, api_key, email = config
 
-    cuit_representante = str(row.get('CUIT_Representante', '')).strip()
-    clave_representante = str(row.get('Clave_representante', '')).strip()
-    cuit_representado = str(row.get('CUIT_Representado', '')).strip()
-    nombre_rcel = str(row.get('Denominacion_RCEL', '')).strip() or "Contribuyente"
+    cuit_representante = str(row.get('cuit_representante', '')).strip()
+    clave_representante = str(row.get('clave_representante', '')).strip()
+    cuit_representado = str(row.get('cuit_representado', '')).strip()
+    nombre_rcel = str(row.get('denominacion_rcel', '')).strip() or "Contribuyente"
 
-    desde = format_date_str(row.get('Desde_RCEL', ''))
-    hasta = format_date_str(row.get('Hasta_RCEL', ''))
+    desde = format_date_str(row.get('desde_rcel', ''))
+    hasta = format_date_str(row.get('hasta_rcel', ''))
 
-    descarga_RCEL = _normalizar_si_no(row.get('Descarga_RCEL'))
-    ubicacion_base = str(row.get('Ubicacion_Descarga_RCEL', '')).strip()
+    descarga_RCEL = _normalizar_si_no(row.get('descarga_rcel'))
+    ubicacion_base = str(row.get('ubicacion_descarga_rcel', '')).strip()
 
     if descarga_RCEL != 'si':
         _log_info(f"Saltando descarga RCEL para CUIT {cuit_representado}", log_fn)
