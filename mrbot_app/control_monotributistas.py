@@ -36,6 +36,10 @@ def _log_error(message: str, log_fn: Optional[Callable[[str], None]] = None) -> 
     _log_message(f"ERROR: {message}", log_fn)
 
 def _normalizar_si_no(valor: Any) -> str:
+    """
+    Normaliza valores a 'si' o 'no'.
+    Acepta: 'si', 's', 'yes', 'y', 'true', '1' (case insensitive) como 'si'.
+    """
     if isinstance(valor, str):
         v = valor.lower().strip()
         if v in ["si", "s", "yes", "y", "true", "1"]:
