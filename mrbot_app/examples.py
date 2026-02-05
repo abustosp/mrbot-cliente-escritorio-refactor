@@ -40,6 +40,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "nombre_emitidos": "emitidos-demo",
                     "ubicacion_recibidos": "/tmp/recibidos",
                     "nombre_recibidos": "recibidos-demo",
+                    "retry": "0",
                 },
                 {
                     "procesar": "NO",
@@ -55,6 +56,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "nombre_emitidos": "emitidos-no",
                     "ubicacion_recibidos": "/tmp/recibidos",
                     "nombre_recibidos": "recibidos-no",
+                    "retry": "0",
                 },
             ]
         ),
@@ -69,6 +71,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "desde": "01/01/2024",
                     "hasta": "31/12/2024",
                     "ubicacion_descarga": "./descargas/RCEL/20987654321",
+                    "retry": "0",
                 },
                 {
                     "procesar": "NO",
@@ -79,6 +82,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "desde": "01/01/2024",
                     "hasta": "31/12/2024",
                     "ubicacion_descarga": "./descargas/RCEL/20999999999",
+                    "retry": "0",
                 },
             ]
         ),
@@ -101,6 +105,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "nombre_vencimientos": "vencimientos-demo",
                     "ubicacion_ddjj": "./Descargas",
                     "nombre_ddjj": "ddjj-demo",
+                    "retry": "0",
                 },
                 {
                     "procesar": "NO",
@@ -119,6 +124,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "nombre_vencimientos": "vencimientos-no",
                     "ubicacion_ddjj": "./Descargas",
                     "nombre_ddjj": "ddjj-no",
+                    "retry": "0",
                 },
             ]
         ),
@@ -132,6 +138,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "movimientos": "SI",
                     "pdf": "SI",
                     "ubicacion_descarga": "./descargas/CCMA/20987654321",
+                    "retry": "0",
                 },
                 {
                     "procesar": "NO",
@@ -141,6 +148,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "movimientos": "NO",
                     "pdf": "NO",
                     "ubicacion_descarga": "./descargas/CCMA/20999999999",
+                    "retry": "0",
                 },
             ]
         ),
@@ -155,6 +163,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "desde": "01/11/2025",
                     "hasta": "30/11/2025",
                     "ubicacion_descarga": "./descargas/Mis_Retenciones/30987654321",
+                    "retry": "0",
                 },
                 {
                     "procesar": "NO",
@@ -165,6 +174,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "desde": "01/01/2024",
                     "hasta": "31/01/2024",
                     "ubicacion_descarga": "./descargas/Mis_Retenciones/20999999999",
+                    "retry": "0",
                 },
             ]
         ),
@@ -179,6 +189,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "representado_nombre": "Empresa Ejemplo SA",
                     "jurisdicciones": "todas",
                     "ubicacion_descarga": "./descargas/SIFERE/20987654321",
+                    "retry": "0",
                 },
                 {
                     "procesar": "NO",
@@ -189,6 +200,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "representado_nombre": "Ejemplo NO",
                     "jurisdicciones": "901,902;903|904",
                     "ubicacion_descarga": "./descargas/SIFERE/20999999999",
+                    "retry": "0",
                 },
             ]
         ),
@@ -203,6 +215,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "periodo_desde": "202511",
                     "periodo_hasta": "202511",
                     "ubicacion_descarga": "./descargas/Declaracion_en_Linea/30987654321",
+                    "retry": "0",
                 },
                 {
                     "procesar": "NO",
@@ -213,6 +226,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "periodo_desde": "202401",
                     "periodo_hasta": "202412",
                     "ubicacion_descarga": "./descargas/Declaracion_en_Linea/20999999999",
+                    "retry": "0",
                 },
             ]
         ),
@@ -225,6 +239,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "cuit_representado": "30987654321",
                     "denominacion": "Empresa Ejemplo SA",
                     "ubicacion_descarga": "./descargas/Mis_Facilidades/30987654321",
+                    "retry": "0",
                 },
                 {
                     "procesar": "NO",
@@ -233,6 +248,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "cuit_representado": "20999999999",
                     "denominacion": "Ejemplo NO",
                     "ubicacion_descarga": "./descargas/Mis_Facilidades/20999999999",
+                    "retry": "0",
                 },
             ]
         ),
@@ -244,6 +260,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "clave": "tu_clave_fiscal",
                     "cuit_representado": "20123456789",
                     "ubicacion_descarga": "./descargas/Aportes_en_Linea/20123456789",
+                    "retry": "0",
                 },
                 {
                     "procesar": "NO",
@@ -251,6 +268,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "clave": "clave_no",
                     "cuit_representado": "20999999999",
                     "ubicacion_descarga": "./descargas/Aportes_en_Linea/20999999999",
+                    "retry": "0",
                 },
             ]
         ),

@@ -433,8 +433,24 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
             self.log_info(f"Bloques activos -> deuda={include_deuda}, vencimientos={include_venc}, ddjj={include_ddjj}")
             self.log_info(f"Salidas solicitadas -> {json.dumps(outputs, ensure_ascii=False)}")
             self.log_request(self._redact(payload))
-            resp = safe_post(url, headers, payload)
-            data = resp.get("data", {})
+
+            try:
+                retry_val = int(row.get("retry", 0))
+            except (ValueError, TypeError):
+                retry_val = 0
+            total_attempts = retry_val if retry_val > 1 else 1
+
+            resp = {}
+            data = {}
+            for attempt in range(1, total_attempts + 1):
+                if attempt > 1:
+                    self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
+
+                resp = safe_post(url, headers, payload)
+                data = resp.get("data", {})
+                if resp.get("http_status") == 200:
+                    break
+
             self.log_response(resp.get("http_status"), data)
             downloads = 0
             download_errors: List[str] = []
