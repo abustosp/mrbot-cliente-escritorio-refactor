@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 import os
 from typing import Any, Dict, List, Optional
@@ -7,6 +8,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from urllib.parse import urlparse, unquote
 
+from mrbot_app.config import get_max_workers
 from mrbot_app.mis_comprobantes import consulta_mc
 from mrbot_app.helpers import (
     build_headers,
@@ -350,88 +352,108 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
     def _worker_excel(self, df, default_desde, default_hasta):
         total = len(df)
         self.set_progress(0, total)
+        max_workers = get_max_workers()
 
-        for idx, (_, row) in enumerate(df.iterrows(), start=1):
-            if self._abort_event.is_set():
-                break
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(self._process_row_mc, row, default_desde, default_hasta): idx
+                for idx, (_, row) in enumerate(df.iterrows(), start=1)
+            }
 
-            desde = format_date_str(row.get("desde", "")) or default_desde
-            hasta = format_date_str(row.get("hasta", "")) or default_hasta
-
-            cuit_inicio = str(row.get("cuit_inicio_sesion", "") or row.get("cuit_representante", "")).strip()
-            nombre_repr = str(row.get("representado_nombre", "") or row.get("nombre_representado", "")).strip()
-            cuit_repr = str(row.get("representado_cuit", "") or row.get("cuit_representado", "")).strip()
-            clave = str(row.get("contrasena", "") or row.get("clave", "")).strip()
-
-            # Booleanos con logica del excel mixin o pandas
-            def _bool_val(key, default):
-                val = row.get(key, "")
-                text = str(val).lower().strip()
-                if text in ("si", "1", "true", "yes", "y"): return True
-                if text in ("no", "0", "false", "n"): return False
-                return default
-
-            d_emitidos = _bool_val("descarga_emitidos", False)
-            d_recibidos = _bool_val("descarga_recibidos", False)
-
-            # Paths specific
-            row_download = str(row.get("ubicacion_descarga", "")).strip()
-
-            # New columns
-            ub_emitidos = str(row.get("ubicacion_emitidos", "")).strip()
-            nom_emitidos = str(row.get("nombre_emitidos", "")).strip()
-            ub_recibidos = str(row.get("ubicacion_recibidos", "")).strip()
-            nom_recibidos = str(row.get("nombre_recibidos", "")).strip()
-
-            self.log_separator(f"{nombre_repr} ({cuit_repr})")
-
-            # Determine fallback directory
-            fallback_dir = row_download
-            if not fallback_dir:
-                 from mrbot_app.mis_comprobantes import FALLBACK_BASE_DIR
-                 fallback_dir = os.path.join(FALLBACK_BASE_DIR, cuit_inicio, nombre_repr or cuit_repr)
-
-            try:
-                # We only need to create fallback_dir if we are actually using it, but it doesn't hurt to ensure it exists
-                # if it's the base for subfolders.
-                # However, if using custom paths for everything, we might not need this.
-                # But to be safe for mixed usage:
-                if not (ub_emitidos and ub_recibidos):
-                     os.makedirs(fallback_dir, exist_ok=True)
-            except Exception:
-                pass
-
-            self.log_info(f"Periodo: {desde} - {hasta}")
-
-            try:
-                retry_val = int(row.get("retry", 0))
-            except (ValueError, TypeError):
-                retry_val = 0
-            total_attempts = retry_val if retry_val > 1 else 1
-
-            response = {}
-            for attempt in range(1, total_attempts + 1):
-                if attempt > 1:
-                    self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
-
-                response = consulta_mc(
-                    desde, hasta, cuit_inicio, nombre_repr, cuit_repr, clave,
-                    d_emitidos, d_recibidos, carga_minio=True, carga_json=False, b64=False,
-                    log_fn=self.log_message
-                )
-
-                if response.get("success", False):
+            completed = 0
+            for future in concurrent.futures.as_completed(futures):
+                idx = futures[future]
+                completed += 1
+                if self._abort_event.is_set():
+                    executor.shutdown(wait=False, cancel_futures=True)
                     break
 
-            # Use new processing method
-            self._process_response_excel(
-                response, cuit_repr, nombre_repr,
-                d_emitidos, d_recibidos,
-                ub_emitidos, nom_emitidos,
-                ub_recibidos, nom_recibidos,
-                fallback_dir
-            )
+                try:
+                    future.result()
+                except Exception as e:
+                    self.log_error(f"Error en fila {idx}: {e}")
 
-            self.set_progress(idx, total)
+                self.set_progress(completed, total)
 
         self.log_info("Proceso masivo finalizado.")
+
+    def _process_row_mc(self, row, default_desde, default_hasta):
+        if self._abort_event.is_set():
+            return
+
+        desde = format_date_str(row.get("desde", "")) or default_desde
+        hasta = format_date_str(row.get("hasta", "")) or default_hasta
+
+        cuit_inicio = str(row.get("cuit_inicio_sesion", "") or row.get("cuit_representante", "")).strip()
+        nombre_repr = str(row.get("representado_nombre", "") or row.get("nombre_representado", "")).strip()
+        cuit_repr = str(row.get("representado_cuit", "") or row.get("cuit_representado", "")).strip()
+        clave = str(row.get("contrasena", "") or row.get("clave", "")).strip()
+
+        # Booleanos con logica del excel mixin o pandas
+        def _bool_val(key, default):
+            val = row.get(key, "")
+            text = str(val).lower().strip()
+            if text in ("si", "1", "true", "yes", "y"): return True
+            if text in ("no", "0", "false", "n"): return False
+            return default
+
+        d_emitidos = _bool_val("descarga_emitidos", False)
+        d_recibidos = _bool_val("descarga_recibidos", False)
+
+        # Paths specific
+        row_download = str(row.get("ubicacion_descarga", "")).strip()
+
+        # New columns
+        ub_emitidos = str(row.get("ubicacion_emitidos", "")).strip()
+        nom_emitidos = str(row.get("nombre_emitidos", "")).strip()
+        ub_recibidos = str(row.get("ubicacion_recibidos", "")).strip()
+        nom_recibidos = str(row.get("nombre_recibidos", "")).strip()
+
+        self.log_separator(f"{nombre_repr} ({cuit_repr})")
+
+        # Determine fallback directory
+        fallback_dir = row_download
+        if not fallback_dir:
+            from mrbot_app.mis_comprobantes import FALLBACK_BASE_DIR
+            fallback_dir = os.path.join(FALLBACK_BASE_DIR, cuit_inicio, nombre_repr or cuit_repr)
+
+        try:
+            # We only need to create fallback_dir if we are actually using it, but it doesn't hurt to ensure it exists
+            # if it's the base for subfolders.
+            # However, if using custom paths for everything, we might not need this.
+            # But to be safe for mixed usage:
+            if not (ub_emitidos and ub_recibidos):
+                os.makedirs(fallback_dir, exist_ok=True)
+        except Exception:
+            pass
+
+        self.log_info(f"Periodo: {desde} - {hasta}")
+
+        try:
+            retry_val = int(row.get("retry", 0))
+        except (ValueError, TypeError):
+            retry_val = 0
+        total_attempts = retry_val if retry_val > 1 else 1
+
+        response = {}
+        for attempt in range(1, total_attempts + 1):
+            if attempt > 1:
+                self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
+
+            response = consulta_mc(
+                desde, hasta, cuit_inicio, nombre_repr, cuit_repr, clave,
+                d_emitidos, d_recibidos, carga_minio=True, carga_json=False, b64=False,
+                log_fn=self.log_message
+            )
+
+            if response.get("success", False):
+                break
+
+        # Use new processing method
+        self._process_response_excel(
+            response, cuit_repr, nombre_repr,
+            d_emitidos, d_recibidos,
+            ub_emitidos, nom_emitidos,
+            ub_recibidos, nom_recibidos,
+            fallback_dir
+        )

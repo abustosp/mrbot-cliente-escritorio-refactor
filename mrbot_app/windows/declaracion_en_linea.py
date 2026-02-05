@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 import os
 from typing import Any, Dict, List, Optional
@@ -6,6 +7,7 @@ import pandas as pd
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from mrbot_app.config import get_max_workers
 from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, safe_post
 from mrbot_app.windows.base import BaseWindow
 from mrbot_app.windows.minio_helpers import (

@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 import os
 import re
@@ -8,6 +9,7 @@ import pandas as pd
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from mrbot_app.config import get_max_workers
 from mrbot_app.consulta import descargar_archivo_minio
 from mrbot_app.helpers import (
     build_headers,
@@ -368,110 +370,130 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
         rows: List[Dict[str, Any]] = []
         total = len(df)
         self.set_progress(0, total)
+        max_workers = get_max_workers()
 
-        for idx, (_, row) in enumerate(df.iterrows(), start=1):
-            if self._abort_event.is_set():
-                break
-
-            include_deuda = parse_bool_cell(row.get("deuda"), default=defaults["deuda"]) if "deuda" in row else defaults["deuda"]
-            include_venc = (
-                parse_bool_cell(row.get("vencimientos"), default=defaults["vencimientos"]) if "vencimientos" in row else defaults["vencimientos"]
-            )
-            include_ddjj = (
-                parse_bool_cell(row.get("presentacion_ddjj"), default=defaults["presentacion"])
-                if "presentacion_ddjj" in row
-                else defaults["presentacion"]
-            )
-
-            # Pass defaults to helper to avoid UI access
-            excel_fmt, csv_fmt, pdf_fmt = self._row_format_flags(
-                row, prefer_row=True,
-                default_excel=defaults["excel"],
-                default_csv=defaults["csv"],
-                default_pdf=defaults["pdf"]
-            )
-
-            outputs, has_outputs = self.build_output_flags(include_deuda, include_venc, include_ddjj, excel_fmt, csv_fmt, pdf_fmt)
-            if not has_outputs:
-                self.log_separator(str(row.get("cuit_representado", "")).strip())
-                self.log_error("Sin formato de salida seleccionado para esta fila")
-                rows.append(
-                    {
-                        "cuit_representado": str(row.get("cuit_representado", "")).strip(),
-                        "http_status": None,
-                        "status": "sin_salida",
-                        "error_message": "Sin formato de salida seleccionado para esta fila",
-                    }
-                )
-                self.set_progress(idx, total)
-                continue
-            block_config = {
-                "deudas": {
-                    "enabled": include_deuda,
-                    "path": str(row.get("ubicacion_deuda") or row.get("ubicacion_deudas") or ""),
-                    "name": str(row.get("nombre_deuda") or row.get("nombre_deudas") or ""),
-                },
-                "vencimientos": {
-                    "enabled": include_venc,
-                    "path": str(row.get("ubicacion_vencimientos") or ""),
-                    "name": str(row.get("nombre_vencimientos") or ""),
-                },
-                "ddjj_pendientes": {
-                    "enabled": include_ddjj,
-                    "path": str(row.get("ubicacion_ddjj") or row.get("ubicacion_presentacion_ddjj") or ""),
-                    "name": str(row.get("nombre_ddjj") or row.get("nombre_presentacion_ddjj") or ""),
-                },
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(self._process_row_sct, row, url, headers, defaults): idx
+                for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
-            payload = {
-                "cuit_login": str(row.get("cuit_login", "")).strip(),
-                "clave": str(row.get("clave", "")),
-                "cuit_representado": str(row.get("cuit_representado", "")).strip(),
-                "proxy_request": defaults["proxy"],
-            }
-            payload.update(outputs)
-            self.log_separator(payload["cuit_representado"])
-            self.log_info(f"Bloques activos -> deuda={include_deuda}, vencimientos={include_venc}, ddjj={include_ddjj}")
-            self.log_info(f"Salidas solicitadas -> {json.dumps(outputs, ensure_ascii=False)}")
-            self.log_request(self._redact(payload))
 
-            try:
-                retry_val = int(row.get("retry", 0))
-            except (ValueError, TypeError):
-                retry_val = 0
-            total_attempts = retry_val if retry_val > 1 else 1
-
-            resp = {}
-            data = {}
-            for attempt in range(1, total_attempts + 1):
-                if attempt > 1:
-                    self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
-
-                resp = safe_post(url, headers, payload)
-                data = resp.get("data", {})
-                if resp.get("http_status") == 200:
+            completed = 0
+            for future in concurrent.futures.as_completed(futures):
+                idx = futures[future]
+                completed += 1
+                if self._abort_event.is_set():
+                    executor.shutdown(wait=False, cancel_futures=True)
                     break
 
-            self.log_response(resp.get("http_status"), data)
-            downloads = 0
-            download_errors: List[str] = []
-            if isinstance(data, dict):
-                downloads, download_errors = self._process_downloads_per_block(
-                    data, outputs, block_config, payload["cuit_representado"], payload["cuit_login"]
-                )
-            if downloads:
-                self.log_info(f"Descargas completadas: {downloads}")
-            for err in download_errors:
-                self.log_error(f"Descarga: {err}")
-            rows.append(
-                {
-                    "cuit_representado": payload["cuit_representado"],
-                    "http_status": resp.get("http_status"),
-                    "status": data.get("status") if isinstance(data, dict) else None,
-                    "error_message": data.get("error_message") if isinstance(data, dict) else None,
-                    "descargas": downloads,
-                    "errores_descarga": "; ".join(download_errors) if download_errors else None,
-                }
-            )
-            self.set_progress(idx, total)
+                try:
+                    result = future.result()
+                    if result:
+                        rows.append(result)
+                except Exception as e:
+                    self.log_error(f"Error en fila {idx}: {e}")
+
+                self.set_progress(completed, total)
+
         out_df = pd.DataFrame(rows)
         self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))
+
+    def _process_row_sct(self, row, url, headers, defaults):
+        if self._abort_event.is_set():
+            return None
+
+        include_deuda = parse_bool_cell(row.get("deuda"), default=defaults["deuda"]) if "deuda" in row else defaults["deuda"]
+        include_venc = (
+            parse_bool_cell(row.get("vencimientos"), default=defaults["vencimientos"]) if "vencimientos" in row else defaults["vencimientos"]
+        )
+        include_ddjj = (
+            parse_bool_cell(row.get("presentacion_ddjj"), default=defaults["presentacion"])
+            if "presentacion_ddjj" in row
+            else defaults["presentacion"]
+        )
+
+        # Pass defaults to helper to avoid UI access
+        excel_fmt, csv_fmt, pdf_fmt = self._row_format_flags(
+            row, prefer_row=True,
+            default_excel=defaults["excel"],
+            default_csv=defaults["csv"],
+            default_pdf=defaults["pdf"]
+        )
+
+        outputs, has_outputs = self.build_output_flags(include_deuda, include_venc, include_ddjj, excel_fmt, csv_fmt, pdf_fmt)
+        if not has_outputs:
+            self.log_separator(str(row.get("cuit_representado", "")).strip())
+            self.log_error("Sin formato de salida seleccionado para esta fila")
+            return {
+                "cuit_representado": str(row.get("cuit_representado", "")).strip(),
+                "http_status": None,
+                "status": "sin_salida",
+                "error_message": "Sin formato de salida seleccionado para esta fila",
+            }
+
+        block_config = {
+            "deudas": {
+                "enabled": include_deuda,
+                "path": str(row.get("ubicacion_deuda") or row.get("ubicacion_deudas") or ""),
+                "name": str(row.get("nombre_deuda") or row.get("nombre_deudas") or ""),
+            },
+            "vencimientos": {
+                "enabled": include_venc,
+                "path": str(row.get("ubicacion_vencimientos") or ""),
+                "name": str(row.get("nombre_vencimientos") or ""),
+            },
+            "ddjj_pendientes": {
+                "enabled": include_ddjj,
+                "path": str(row.get("ubicacion_ddjj") or row.get("ubicacion_presentacion_ddjj") or ""),
+                "name": str(row.get("nombre_ddjj") or row.get("nombre_presentacion_ddjj") or ""),
+            },
+        }
+        payload = {
+            "cuit_login": str(row.get("cuit_login", "")).strip(),
+            "clave": str(row.get("clave", "")),
+            "cuit_representado": str(row.get("cuit_representado", "")).strip(),
+            "proxy_request": defaults["proxy"],
+        }
+        payload.update(outputs)
+        self.log_separator(payload["cuit_representado"])
+        self.log_info(f"Bloques activos -> deuda={include_deuda}, vencimientos={include_venc}, ddjj={include_ddjj}")
+        self.log_info(f"Salidas solicitadas -> {json.dumps(outputs, ensure_ascii=False)}")
+        self.log_request(self._redact(payload))
+
+        try:
+            retry_val = int(row.get("retry", 0))
+        except (ValueError, TypeError):
+            retry_val = 0
+        total_attempts = retry_val if retry_val > 1 else 1
+
+        resp = {}
+        data = {}
+        for attempt in range(1, total_attempts + 1):
+            if attempt > 1:
+                self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
+
+            resp = safe_post(url, headers, payload)
+            data = resp.get("data", {})
+            if resp.get("http_status") == 200:
+                break
+
+        self.log_response(resp.get("http_status"), data)
+        downloads = 0
+        download_errors: List[str] = []
+        if isinstance(data, dict):
+            downloads, download_errors = self._process_downloads_per_block(
+                data, outputs, block_config, payload["cuit_representado"], payload["cuit_login"]
+            )
+        if downloads:
+            self.log_info(f"Descargas completadas: {downloads}")
+        for err in download_errors:
+            self.log_error(f"Descarga: {err}")
+
+        return {
+            "cuit_representado": payload["cuit_representado"],
+            "http_status": resp.get("http_status"),
+            "status": data.get("status") if isinstance(data, dict) else None,
+            "error_message": data.get("error_message") if isinstance(data, dict) else None,
+            "descargas": downloads,
+            "errores_descarga": "; ".join(download_errors) if download_errors else None,
+        }

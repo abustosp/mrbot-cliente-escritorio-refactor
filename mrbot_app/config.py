@@ -28,6 +28,7 @@ DEFAULT_API_KEY = os.getenv("API_KEY", "")
 DEFAULT_EMAIL = os.getenv("MAIL", "")
 DEFAULT_POST_TIMEOUT = _get_env_int("TIMEOUT_POST", 120)
 DEFAULT_GET_TIMEOUT = _get_env_int("TIMEOUT_GET", 60)
+DEFAULT_MAX_WORKERS = _get_env_int("MAX_WORKERS_MRBOT_API", 1)
 
 
 def reload_env_defaults() -> tuple[str, str, str]:
@@ -50,3 +51,11 @@ def get_request_timeouts() -> tuple[int, int]:
         _get_env_int("TIMEOUT_POST", DEFAULT_POST_TIMEOUT),
         _get_env_int("TIMEOUT_GET", DEFAULT_GET_TIMEOUT),
     )
+
+
+def get_max_workers() -> int:
+    """
+    Devuelve el numero maximo de workers para requests a la API.
+    Lee MAX_WORKERS_MRBOT_API del entorno, default 1.
+    """
+    return _get_env_int("MAX_WORKERS_MRBOT_API", DEFAULT_MAX_WORKERS)
