@@ -289,9 +289,27 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             safe_payload["clave_representante"] = "***"
             self.log_separator(cuit_repr or cuit_rep)
             self.log_request(safe_payload)
-            resp = safe_post(url, headers, payload)
-            http_status = resp.get("http_status")
-            data = resp.get("data")
+
+            try:
+                retry_val = int(row.get("retry", 0))
+            except (ValueError, TypeError):
+                retry_val = 0
+            total_attempts = retry_val if retry_val > 1 else 1
+
+            resp = {}
+            data = {}
+            http_status = None
+
+            for attempt in range(1, total_attempts + 1):
+                if attempt > 1:
+                    self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
+
+                resp = safe_post(url, headers, payload)
+                http_status = resp.get("http_status")
+                data = resp.get("data")
+                if http_status == 200:
+                    break
+
             self.log_response(http_status, data)
             if http_status != 200:
                 detail = resp.get("error") or resp.get("detail") or data

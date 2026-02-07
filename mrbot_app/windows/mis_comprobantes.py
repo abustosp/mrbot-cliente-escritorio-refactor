@@ -403,11 +403,25 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
 
             self.log_info(f"Periodo: {desde} - {hasta}")
 
-            response = consulta_mc(
-                desde, hasta, cuit_inicio, nombre_repr, cuit_repr, clave,
-                d_emitidos, d_recibidos, carga_minio=True, carga_json=False, b64=False,
-                log_fn=self.log_message
-            )
+            try:
+                retry_val = int(row.get("retry", 0))
+            except (ValueError, TypeError):
+                retry_val = 0
+            total_attempts = retry_val if retry_val > 1 else 1
+
+            response = {}
+            for attempt in range(1, total_attempts + 1):
+                if attempt > 1:
+                    self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
+
+                response = consulta_mc(
+                    desde, hasta, cuit_inicio, nombre_repr, cuit_repr, clave,
+                    d_emitidos, d_recibidos, carga_minio=True, carga_json=False, b64=False,
+                    log_fn=self.log_message
+                )
+
+                if response.get("success", False):
+                    break
 
             # Use new processing method
             self._process_response_excel(

@@ -266,8 +266,24 @@ class SifereWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             safe_payload = dict(payload)
             safe_payload["clave_representante"] = "***"
             self.log_request(safe_payload)
-            resp = safe_post(url, headers, payload)
-            data = resp.get("data", {})
+
+            try:
+                retry_val = int(row.get("retry", 0))
+            except (ValueError, TypeError):
+                retry_val = 0
+            total_attempts = retry_val if retry_val > 1 else 1
+
+            resp = {}
+            data = {}
+            for attempt in range(1, total_attempts + 1):
+                if attempt > 1:
+                    self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
+
+                resp = safe_post(url, headers, payload)
+                data = resp.get("data", {})
+                if resp.get("http_status") == 200:
+                    break
+
             self.log_response(resp.get("http_status"), data)
             downloads, errors, download_dir = self._process_downloads(
                 data, self.MODULE_DIR, cuit_repr, override_dir=row_download
