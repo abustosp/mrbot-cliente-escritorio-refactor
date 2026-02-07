@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 import os
 from typing import Any, Dict, List, Optional
@@ -6,6 +7,7 @@ import pandas as pd
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from mrbot_app.config import get_max_workers
 from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, safe_post
 from mrbot_app.windows.base import BaseWindow
 from mrbot_app.windows.minio_helpers import build_link, collect_minio_links
@@ -156,66 +158,89 @@ class AportesEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         rows: List[Dict[str, Any]] = []
         total = len(df)
         self.set_progress(0, total)
+        max_workers = get_max_workers()
 
-        for idx, (_, row) in enumerate(df.iterrows(), start=1):
-            if self._abort_event.is_set():
-                break
-
-            cuit_login = str(row.get("cuit_login", "")).strip()
-            cuit_repr = self._optional_value(str(row.get("cuit_representado", "")))
-            row_download = str(row.get("ubicacion_descarga") or row.get("path_descarga") or row.get("carpeta_descarga") or "").strip()
-            self.log_separator(cuit_repr or cuit_login)
-            payload = {
-                "cuit_login": cuit_login,
-                "clave": str(row.get("clave", "")),
-                "cuit_representado": cuit_repr,
-                "archivo_historico_b64": False,
-                "archivo_historico_minio": True,
-                "proxy_request": False,
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(self._process_row_aportes, row, url, headers): idx
+                for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
-            safe_payload = dict(payload)
-            safe_payload["clave"] = "***"
-            self.log_request(safe_payload)
 
-            try:
-                retry_val = int(row.get("retry", 0))
-            except (ValueError, TypeError):
-                retry_val = 0
-            total_attempts = retry_val if retry_val > 1 else 1
-
-            resp = {}
-            data = {}
-            for attempt in range(1, total_attempts + 1):
-                if attempt > 1:
-                    self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
-
-                resp = safe_post(url, headers, payload)
-                data = resp.get("data", {})
-                if resp.get("http_status") == 200:
+            completed = 0
+            for future in concurrent.futures.as_completed(futures):
+                idx = futures[future]
+                completed += 1
+                if self._abort_event.is_set():
+                    executor.shutdown(wait=False, cancel_futures=True)
                     break
 
-            self.log_response(resp.get("http_status"), data)
-            cuit_folder = cuit_repr or cuit_login
-            downloads, errors, download_dir = self._process_downloads(
-                data, self.MODULE_DIR, cuit_folder, override_dir=row_download
-            )
-            if downloads:
-                self.log_info(f"Descargas completadas: {downloads} -> {download_dir}")
-            elif data:
-                self.log_info("Sin links de descarga")
-            for err in errors:
-                self.log_error(f"Descarga: {err}")
-            rows.append(
-                {
-                    "cuit_representado": cuit_folder,
-                    "http_status": resp.get("http_status"),
-                    "status": data.get("status") if isinstance(data, dict) else None,
-                    "error_message": data.get("error_message") if isinstance(data, dict) else None,
-                    "descargas": downloads,
-                    "errores_descarga": "; ".join(errors) if errors else None,
-                    "carpeta_descarga": download_dir,
-                }
-            )
-            self.set_progress(idx, total)
+                try:
+                    result = future.result()
+                    if result:
+                        rows.append(result)
+                except Exception as e:
+                    self.log_error(f"Error en fila {idx}: {e}")
+
+                self.set_progress(completed, total)
+
         out_df = pd.DataFrame(rows)
         self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))
+
+    def _process_row_aportes(self, row, url, headers):
+        if self._abort_event.is_set():
+            return None
+
+        cuit_login = str(row.get("cuit_login", "")).strip()
+        cuit_repr = self._optional_value(str(row.get("cuit_representado", "")))
+        row_download = str(row.get("ubicacion_descarga") or row.get("path_descarga") or row.get("carpeta_descarga") or "").strip()
+        self.log_separator(cuit_repr or cuit_login)
+        payload = {
+            "cuit_login": cuit_login,
+            "clave": str(row.get("clave", "")),
+            "cuit_representado": cuit_repr,
+            "archivo_historico_b64": False,
+            "archivo_historico_minio": True,
+            "proxy_request": False,
+        }
+        safe_payload = dict(payload)
+        safe_payload["clave"] = "***"
+        self.log_request(safe_payload)
+
+        try:
+            retry_val = int(row.get("retry", 0))
+        except (ValueError, TypeError):
+            retry_val = 0
+        total_attempts = retry_val if retry_val > 1 else 1
+
+        resp = {}
+        data = {}
+        for attempt in range(1, total_attempts + 1):
+            if attempt > 1:
+                self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
+
+            resp = safe_post(url, headers, payload)
+            data = resp.get("data", {})
+            if resp.get("http_status") == 200:
+                break
+
+        self.log_response(resp.get("http_status"), data)
+        cuit_folder = cuit_repr or cuit_login
+        downloads, errors, download_dir = self._process_downloads(
+            data, self.MODULE_DIR, cuit_folder, override_dir=row_download
+        )
+        if downloads:
+            self.log_info(f"Descargas completadas: {downloads} -> {download_dir}")
+        elif data:
+            self.log_info("Sin links de descarga")
+        for err in errors:
+            self.log_error(f"Descarga: {err}")
+
+        return {
+            "cuit_representado": cuit_folder,
+            "http_status": resp.get("http_status"),
+            "status": data.get("status") if isinstance(data, dict) else None,
+            "error_message": data.get("error_message") if isinstance(data, dict) else None,
+            "descargas": downloads,
+            "errores_descarga": "; ".join(errors) if errors else None,
+            "carpeta_descarga": download_dir,
+        }

@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 import os
 import re
@@ -8,6 +9,7 @@ import pandas as pd
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from mrbot_app.config import get_max_workers
 from mrbot_app.formatos import aplicar_formato_encabezado, agregar_filtros, autoajustar_columnas
 from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, parse_bool_cell, safe_post
 from mrbot_app.windows.base import BaseWindow
@@ -260,137 +262,176 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
 
         total = len(df)
         self.set_progress(0, total)
+        max_workers = get_max_workers()
 
-        for idx, (_, row) in enumerate(df.iterrows(), start=1):
-            if self._abort_event.is_set():
-                break
-
-            cuit_rep = str(row.get("cuit_representante", "")).strip()
-            cuit_repr = str(row.get("cuit_representado", "")).strip()
-            movimientos_flag = parse_bool_cell(row.get("movimientos"), default=movimientos_default)
-            movimientos_requested = movimientos_requested or movimientos_flag
-
-            # Special case for pdf flag from excel which could be None to use default
-            pdf_flag = self._parse_optional_bool(row.get("pdf"))
-            if pdf_flag is None:
-                pdf_flag = pdf_default
-
-            payload = {
-                "cuit_representante": cuit_rep,
-                "clave_representante": str(row.get("clave_representante", "")),
-                "cuit_representado": cuit_repr,
-                "proxy_request": proxy_default,
-                "movimientos": movimientos_flag
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(
+                    self._process_row_ccma, row, url, headers, movimientos_default, pdf_default, proxy_default
+                ): idx
+                for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
-            if pdf_flag:
-                payload["pdf"] = True
 
-            safe_payload = dict(payload)
-            safe_payload["clave_representante"] = "***"
-            self.log_separator(cuit_repr or cuit_rep)
-            self.log_request(safe_payload)
-
-            try:
-                retry_val = int(row.get("retry", 0))
-            except (ValueError, TypeError):
-                retry_val = 0
-            total_attempts = retry_val if retry_val > 1 else 1
-
-            resp = {}
-            data = {}
-            http_status = None
-
-            for attempt in range(1, total_attempts + 1):
-                if attempt > 1:
-                    self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
-
-                resp = safe_post(url, headers, payload)
-                http_status = resp.get("http_status")
-                data = resp.get("data")
-                if http_status == 200:
+            completed = 0
+            for future in concurrent.futures.as_completed(futures):
+                idx = futures[future]
+                completed += 1
+                if self._abort_event.is_set():
+                    executor.shutdown(wait=False, cancel_futures=True)
                     break
 
-            self.log_response(http_status, data)
-            if http_status != 200:
-                detail = resp.get("error") or resp.get("detail") or data
-                self.log_error(f"HTTP {http_status}: {detail}")
+                try:
+                    result_row, result_movs, req_movs = future.result()
+                    if result_row:
+                        rows.append(result_row)
+                    if result_movs:
+                        movimientos_rows.extend(result_movs)
+                    if req_movs:
+                        movimientos_requested = True
+                except Exception as e:
+                    self.log_error(f"Error en fila {idx}: {e}")
+                self.set_progress(completed, total)
 
-            cuit_label = self._resolve_cuit_label(cuit_repr, cuit_rep, data)
-            row_download = str(row.get("ubicacion_descarga") or row.get("path_descarga") or row.get("carpeta_descarga") or "").strip()
+        # Post processing involves creating DataFrame and saving Excel, which is safe in thread as it doesn't touch UI directly except via log_error
+        self._post_process_excel(rows, movimientos_rows, movimientos_requested)
 
-            downloads, errors, download_dir = self._process_downloads(
-                data, self.MODULE_DIR, cuit_label, override_dir=row_download
-            )
+    def _process_row_ccma(self, row, url, headers, movimientos_default, pdf_default, proxy_default):
+        if self._abort_event.is_set():
+            return None, [], False
 
-            json_path, json_error = self._save_ccma_response_json(download_dir, cuit_label, data)
-            if json_path:
-                self.log_info(f"JSON guardado: {json_path}")
-            if json_error:
-                self.log_error(f"JSON: {json_error}")
+        cuit_rep = str(row.get("cuit_representante", "")).strip()
+        cuit_repr = str(row.get("cuit_representado", "")).strip()
+        movimientos_flag = parse_bool_cell(row.get("movimientos"), default=movimientos_default)
 
-            if downloads:
-                self.log_info(f"PDF descargado: {downloads} -> {download_dir}")
-            elif pdf_flag:
-                 self.log_info("PDF: no se encontro link en la respuesta.")
+        # Special case for pdf flag from excel which could be None to use default
+        pdf_flag = self._parse_optional_bool(row.get("pdf"))
+        if pdf_flag is None:
+            pdf_flag = pdf_default
 
-            for err in errors:
-                self.log_error(f"PDF: {err}")
+        payload = {
+            "cuit_representante": cuit_rep,
+            "clave_representante": str(row.get("clave_representante", "")),
+            "cuit_representado": cuit_repr,
+            "proxy_request": proxy_default,
+            "movimientos": movimientos_flag,
+        }
+        if pdf_flag:
+            payload["pdf"] = True
 
-            if http_status == 200 and isinstance(data, dict):
-                # Extraer clave "response_ccma" si existe, para replicar ejemplo
-                response_obj = data.get("response_ccma", data)
-                if isinstance(response_obj, dict):
-                    rows.append({
-                        "cuit_representante": cuit_rep,
-                        "cuit_representado": cuit_repr,
-                        "cuit": response_obj.get("cuit"),
-                        "periodo": response_obj.get("periodo"),
-                        "deuda_capital": _parse_amount(response_obj.get("deuda_capital")),
-                        "deuda_accesorios": _parse_amount(response_obj.get("deuda_accesorios")),
-                        "total_deuda": _parse_amount(response_obj.get("total_deuda")),
-                        "credito_capital": _parse_amount(response_obj.get("credito_capital")),
-                        "credito_accesorios": _parse_amount(response_obj.get("credito_accesorios")),
-                        "total_a_favor": _parse_amount(response_obj.get("total_a_favor")),
-                        "pdf_url_minio": response_obj.get("pdf_url_minio"),
-                        "response_json": json.dumps({"response_ccma": response_obj}, ensure_ascii=False),
-                        "movimientos_solicitados": movimientos_flag,
-                        "pdf_solicitado": pdf_flag,
-                        "error": None
-                    })
-                    movimientos_list = response_obj.get("movimientos")
-                    if movimientos_flag and isinstance(movimientos_list, list):
-                        for mov in movimientos_list:
-                            if not isinstance(mov, dict):
-                                continue
-                            movimientos_rows.append({
+        safe_payload = dict(payload)
+        safe_payload["clave_representante"] = "***"
+        self.log_separator(cuit_repr or cuit_rep)
+        self.log_request(safe_payload)
+
+        try:
+            retry_val = int(row.get("retry", 0))
+        except (ValueError, TypeError):
+            retry_val = 0
+        total_attempts = retry_val if retry_val > 1 else 1
+
+        resp = {}
+        data = {}
+        http_status = None
+
+        for attempt in range(1, total_attempts + 1):
+            if attempt > 1:
+                self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
+
+            resp = safe_post(url, headers, payload)
+            http_status = resp.get("http_status")
+            data = resp.get("data")
+            if http_status == 200:
+                break
+
+        self.log_response(http_status, data)
+        if http_status != 200:
+            detail = resp.get("error") or resp.get("detail") or data
+            self.log_error(f"HTTP {http_status}: {detail}")
+
+        cuit_label = self._resolve_cuit_label(cuit_repr, cuit_rep, data)
+        row_download = str(
+            row.get("ubicacion_descarga")
+            or row.get("path_descarga")
+            or row.get("carpeta_descarga")
+            or ""
+        ).strip()
+
+        downloads, errors, download_dir = self._process_downloads(
+            data, self.MODULE_DIR, cuit_label, override_dir=row_download
+        )
+
+        json_path, json_error = self._save_ccma_response_json(download_dir, cuit_label, data)
+        if json_path:
+            self.log_info(f"JSON guardado: {json_path}")
+        if json_error:
+            self.log_error(f"JSON: {json_error}")
+
+        if downloads:
+            self.log_info(f"PDF descargado: {downloads} -> {download_dir}")
+        elif pdf_flag:
+            self.log_info("PDF: no se encontro link en la respuesta.")
+
+        for err in errors:
+            self.log_error(f"PDF: {err}")
+
+        row_result = {}
+        movs_result = []
+
+        if http_status == 200 and isinstance(data, dict):
+            # Extraer clave "response_ccma" si existe, para replicar ejemplo
+            response_obj = data.get("response_ccma", data)
+            if isinstance(response_obj, dict):
+                row_result = {
+                    "cuit_representante": cuit_rep,
+                    "cuit_representado": cuit_repr,
+                    "cuit": response_obj.get("cuit"),
+                    "periodo": response_obj.get("periodo"),
+                    "deuda_capital": _parse_amount(response_obj.get("deuda_capital")),
+                    "deuda_accesorios": _parse_amount(response_obj.get("deuda_accesorios")),
+                    "total_deuda": _parse_amount(response_obj.get("total_deuda")),
+                    "credito_capital": _parse_amount(response_obj.get("credito_capital")),
+                    "credito_accesorios": _parse_amount(response_obj.get("credito_accesorios")),
+                    "total_a_favor": _parse_amount(response_obj.get("total_a_favor")),
+                    "pdf_url_minio": response_obj.get("pdf_url_minio"),
+                    "response_json": json.dumps({"response_ccma": response_obj}, ensure_ascii=False),
+                    "movimientos_solicitados": movimientos_flag,
+                    "pdf_solicitado": pdf_flag,
+                    "error": None,
+                }
+                movimientos_list = response_obj.get("movimientos")
+                if movimientos_flag and isinstance(movimientos_list, list):
+                    for mov in movimientos_list:
+                        if not isinstance(mov, dict):
+                            continue
+                        movs_result.append(
+                            {
                                 "cuit_representante": cuit_rep,
                                 "cuit_representado": cuit_repr or response_obj.get("cuit"),
-                                **mov
-                            })
-                else:
-                    rows.append({
-                        "cuit_representante": cuit_rep,
-                        "cuit_representado": cuit_repr,
-                        "movimientos_solicitados": movimientos_flag,
-                        "pdf_url_minio": None,
-                        "response_json": json.dumps(data, ensure_ascii=False),
-                        "pdf_solicitado": pdf_flag,
-                        "error": None
-                    })
+                                **mov,
+                            }
+                        )
             else:
-                rows.append({
+                row_result = {
                     "cuit_representante": cuit_rep,
                     "cuit_representado": cuit_repr,
                     "movimientos_solicitados": movimientos_flag,
                     "pdf_url_minio": None,
-                    "response_json": None,
+                    "response_json": json.dumps(data, ensure_ascii=False),
                     "pdf_solicitado": pdf_flag,
-                    "error": json.dumps(resp, ensure_ascii=False)
-                })
-            self.set_progress(idx, total)
+                    "error": None,
+                }
+        else:
+            row_result = {
+                "cuit_representante": cuit_rep,
+                "cuit_representado": cuit_repr,
+                "movimientos_solicitados": movimientos_flag,
+                "pdf_url_minio": None,
+                "response_json": None,
+                "pdf_solicitado": pdf_flag,
+                "error": json.dumps(resp, ensure_ascii=False),
+            }
 
-        # Post processing involves creating DataFrame and saving Excel, which is safe in thread as it doesn't touch UI directly except via log_error
-        self._post_process_excel(rows, movimientos_rows, movimientos_requested)
+        return row_result, movs_result, movimientos_flag
 
     def _post_process_excel(self, rows, movimientos_rows, movimientos_requested):
         out_df = pd.DataFrame(rows)

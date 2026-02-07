@@ -1,3 +1,4 @@
+import concurrent.futures
 import os
 import glob
 import tkinter as tk
@@ -5,6 +6,7 @@ from tkinter import ttk, messagebox
 import pandas as pd
 from typing import Optional, Dict
 
+from mrbot_app.config import get_max_workers
 from mrbot_app.windows.base import BaseWindow
 from mrbot_app.windows.mixins import ExcelHandlerMixin
 from mrbot_app.control_monotributistas import (
@@ -94,15 +96,35 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
         df = self.excel_df
         total = len(df)
         self.set_progress(0, total)
+        max_workers = get_max_workers()
 
-        for idx, (_, row) in enumerate(df.iterrows(), start=1):
-            if self._abort_event.is_set():
-                break
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(self._process_row_mc_control, row): idx
+                for idx, (_, row) in enumerate(df.iterrows(), start=1)
+            }
 
-            procesar_descarga_mc(row, log_fn=self.log_message)
-            self.set_progress(idx, total)
+            completed = 0
+            for future in concurrent.futures.as_completed(futures):
+                idx = futures[future]
+                completed += 1
+                if self._abort_event.is_set():
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    break
+
+                try:
+                    future.result()
+                except Exception as e:
+                    self.log_error(f"Error en fila {idx}: {e}")
+
+                self.set_progress(completed, total)
 
         self.log_info("Descarga MC finalizada.")
+
+    def _process_row_mc_control(self, row):
+        if self._abort_event.is_set():
+            return
+        procesar_descarga_mc(row, log_fn=self.log_message)
 
     def descargar_rcel(self) -> None:
         if self.excel_df is None or self.excel_df.empty:
@@ -118,16 +140,36 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
         df = self.excel_df
         total = len(df)
         self.set_progress(0, total)
-        config = self._get_config() # (url, api_key, email)
+        config = self._get_config()  # (url, api_key, email)
+        max_workers = get_max_workers()
 
-        for idx, (_, row) in enumerate(df.iterrows(), start=1):
-            if self._abort_event.is_set():
-                break
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(self._process_row_rcel_control, row, config): idx
+                for idx, (_, row) in enumerate(df.iterrows(), start=1)
+            }
 
-            procesar_descarga_rcel(row, config, log_fn=self.log_message)
-            self.set_progress(idx, total)
+            completed = 0
+            for future in concurrent.futures.as_completed(futures):
+                idx = futures[future]
+                completed += 1
+                if self._abort_event.is_set():
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    break
+
+                try:
+                    future.result()
+                except Exception as e:
+                    self.log_error(f"Error en fila {idx}: {e}")
+
+                self.set_progress(completed, total)
 
         self.log_info("Descarga RCEL finalizada.")
+
+    def _process_row_rcel_control(self, row, config):
+        if self._abort_event.is_set():
+            return
+        procesar_descarga_rcel(row, config, log_fn=self.log_message)
 
     def procesar_datos(self) -> None:
         # Check Categorias.xlsx

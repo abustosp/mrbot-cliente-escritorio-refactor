@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 from typing import Any, Dict, List, Optional
 import os
@@ -6,6 +7,7 @@ import pandas as pd
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from mrbot_app.config import get_max_workers
 from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, safe_get
 from mrbot_app.windows.base import BaseWindow
 from mrbot_app.windows.mixins import ExcelHandlerMixin
@@ -81,24 +83,45 @@ class ApocrifosWindow(BaseWindow, ExcelHandlerMixin):
         rows: List[Dict[str, Any]] = []
         total = len(df)
         self.set_progress(0, total)
+        max_workers = get_max_workers()
 
-        for idx, (_, row) in enumerate(df.iterrows(), start=1):
-            if self._abort_event.is_set():
-                break
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(self._process_row_apocrifos, row, base_url, headers): idx
+                for idx, (_, row) in enumerate(df.iterrows(), start=1)
+            }
 
-            cuit = str(row.get("cuit", "")).strip()
-            url = ensure_trailing_slash(base_url) + f"api/v1/apoc/consulta/{cuit}"
-            resp = safe_get(url, headers)
-            data = resp.get("data", {})
-            rows.append(
-                {
-                    "cuit": cuit,
-                    "http_status": resp.get("http_status"),
-                    "apoc": data.get("apoc") if isinstance(data, dict) else None,
-                    "message": data.get("message") if isinstance(data, dict) else None,
-                }
-            )
-            self.set_progress(idx, total)
+            completed = 0
+            for future in concurrent.futures.as_completed(futures):
+                idx = futures[future]
+                completed += 1
+                if self._abort_event.is_set():
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    break
+
+                try:
+                    result = future.result()
+                    if result:
+                        rows.append(result)
+                except Exception as e:
+                    self.log_error(f"Error en fila {idx}: {e}")
+
+                self.set_progress(completed, total)
 
         out_df = pd.DataFrame(rows)
         self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))
+
+    def _process_row_apocrifos(self, row, base_url, headers):
+        if self._abort_event.is_set():
+            return None
+
+        cuit = str(row.get("cuit", "")).strip()
+        url = ensure_trailing_slash(base_url) + f"api/v1/apoc/consulta/{cuit}"
+        resp = safe_get(url, headers)
+        data = resp.get("data", {})
+        return {
+            "cuit": cuit,
+            "http_status": resp.get("http_status"),
+            "apoc": data.get("apoc") if isinstance(data, dict) else None,
+            "message": data.get("message") if isinstance(data, dict) else None,
+        }

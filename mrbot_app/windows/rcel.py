@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 import os
 import re
@@ -8,6 +9,7 @@ import pandas as pd
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from mrbot_app.config import get_max_workers
 from mrbot_app.consulta import descargar_archivo_minio
 from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, format_date_str, safe_post
 from mrbot_app.windows.base import BaseWindow
@@ -286,86 +288,109 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
         rows: List[Dict[str, Any]] = []
         total = len(df)
         self.set_progress(0, total)
+        max_workers = get_max_workers()
 
-        for idx, (_, row) in enumerate(df.iterrows(), start=1):
-            if self._abort_event.is_set():
-                break
-
-            desde = format_date_str(row.get("desde", "")) or default_desde
-            hasta = format_date_str(row.get("hasta", "")) or default_hasta
-            row_download = str(
-                row.get("ubicacion_descarga")
-                or row.get("path_descarga")
-                or row.get("carpeta_descarga")
-                or ""
-            ).strip()
-            cuit_repr = str(row.get("representado_cuit", "")).strip()
-            self.log_separator(cuit_repr)
-            payload = {
-                "desde": desde,
-                "hasta": hasta,
-                "cuit_representante": str(row.get("cuit_representante", "")).strip(),
-                "nombre_rcel": str(row.get("nombre_rcel", "")).strip(),
-                "representado_cuit": cuit_repr,
-                "clave": str(row.get("clave", "")),
-                "b64_pdf": b64_pdf,
-                "minio_upload": minio_upload,
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(
+                    self._process_row_rcel, row, url, headers, default_desde, default_hasta, b64_pdf, minio_upload
+                ): idx
+                for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
-            self.log_request(self._redact(payload))
 
-            try:
-                retry_val = int(row.get("retry", 0))
-            except (ValueError, TypeError):
-                retry_val = 0
-            total_attempts = retry_val if retry_val > 1 else 1
-
-            resp = {}
-            data = {}
-            for attempt in range(1, total_attempts + 1):
-                if attempt > 1:
-                    self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
-
-                resp = safe_post(url, headers, payload)
-                data = resp.get("data", {})
-
-                if resp.get("http_status") == 200:
+            completed = 0
+            for future in concurrent.futures.as_completed(futures):
+                idx = futures[future]
+                completed += 1
+                if self._abort_event.is_set():
+                    executor.shutdown(wait=False, cancel_futures=True)
                     break
 
-            self.log_response(resp.get("http_status"), data)
+                try:
+                    result_row = future.result()
+                    if result_row:
+                        rows.append(result_row)
+                except Exception as e:
+                    self.log_error(f"Error en fila {idx}: {e}")
 
-            downloads, download_errors, download_dir_used = self._process_downloads(
-                data, self.MODULE_DIR, cuit_repr, override_dir=row_download
-            )
-
-            if downloads:
-                self.log_info(f"Descargas completadas: {downloads} -> {download_dir_used}")
-            elif isinstance(data, dict):
-                 self.log_info("Sin links de PDF para descargar")
-
-            if isinstance(data, dict):
-                pdf_items = self._collect_pdf_items(data)
-                if pdf_items:
-                    saved_json, json_errors = self._save_pdf_jsons(pdf_items, download_dir_used)
-                    if saved_json:
-                        self.log_info(f"JSON guardados: {saved_json} -> {download_dir_used}")
-                    for err in json_errors:
-                        self.log_error(f"JSON: {err}")
-
-            for err in download_errors:
-                self.log_error(f"Descarga: {err}")
-
-            rows.append(
-                {
-                    "representado_cuit": payload["representado_cuit"],
-                    "http_status": resp.get("http_status"),
-                    "success": data.get("success") if isinstance(data, dict) else None,
-                    "message": data.get("message") if isinstance(data, dict) else None,
-                    "descargas": downloads,
-                    "errores_descarga": "; ".join(download_errors) if download_errors else None,
-                    "carpeta_descarga": download_dir_used,
-                }
-            )
-            self.set_progress(idx, total)
+                self.set_progress(completed, total)
 
         out_df = pd.DataFrame(rows)
         self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))
+
+    def _process_row_rcel(self, row, url, headers, default_desde, default_hasta, b64_pdf, minio_upload):
+        if self._abort_event.is_set():
+            return None
+
+        desde = format_date_str(row.get("desde", "")) or default_desde
+        hasta = format_date_str(row.get("hasta", "")) or default_hasta
+        row_download = str(
+            row.get("ubicacion_descarga")
+            or row.get("path_descarga")
+            or row.get("carpeta_descarga")
+            or ""
+        ).strip()
+        cuit_repr = str(row.get("representado_cuit", "")).strip()
+        self.log_separator(cuit_repr)
+        payload = {
+            "desde": desde,
+            "hasta": hasta,
+            "cuit_representante": str(row.get("cuit_representante", "")).strip(),
+            "nombre_rcel": str(row.get("nombre_rcel", "")).strip(),
+            "representado_cuit": cuit_repr,
+            "clave": str(row.get("clave", "")),
+            "b64_pdf": b64_pdf,
+            "minio_upload": minio_upload,
+        }
+        self.log_request(self._redact(payload))
+
+        try:
+            retry_val = int(row.get("retry", 0))
+        except (ValueError, TypeError):
+            retry_val = 0
+        total_attempts = retry_val if retry_val > 1 else 1
+
+        resp = {}
+        data = {}
+        for attempt in range(1, total_attempts + 1):
+            if attempt > 1:
+                self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
+
+            resp = safe_post(url, headers, payload)
+            data = resp.get("data", {})
+
+            if resp.get("http_status") == 200:
+                break
+
+        self.log_response(resp.get("http_status"), data)
+
+        downloads, download_errors, download_dir_used = self._process_downloads(
+            data, self.MODULE_DIR, cuit_repr, override_dir=row_download
+        )
+
+        if downloads:
+            self.log_info(f"Descargas completadas: {downloads} -> {download_dir_used}")
+        elif isinstance(data, dict):
+            self.log_info("Sin links de PDF para descargar")
+
+        if isinstance(data, dict):
+            pdf_items = self._collect_pdf_items(data)
+            if pdf_items:
+                saved_json, json_errors = self._save_pdf_jsons(pdf_items, download_dir_used)
+                if saved_json:
+                    self.log_info(f"JSON guardados: {saved_json} -> {download_dir_used}")
+                for err in json_errors:
+                    self.log_error(f"JSON: {err}")
+
+        for err in download_errors:
+            self.log_error(f"Descarga: {err}")
+
+        return {
+            "representado_cuit": payload["representado_cuit"],
+            "http_status": resp.get("http_status"),
+            "success": data.get("success") if isinstance(data, dict) else None,
+            "message": data.get("message") if isinstance(data, dict) else None,
+            "descargas": downloads,
+            "errores_descarga": "; ".join(download_errors) if download_errors else None,
+            "carpeta_descarga": download_dir_used,
+        }
