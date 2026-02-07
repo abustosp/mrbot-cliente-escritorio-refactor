@@ -86,6 +86,58 @@ def ensure_example_excels() -> Dict[str, str]:
                 },
             ]
         ),
+        "hacienda.xlsx": pd.DataFrame(
+            [
+                {
+                    "procesar": "SI",
+                    "cuit_representante": "20123456789",
+                    "denominacion": "Empresa Demo Hacienda SA",
+                    "representado_cuit": "20987654321",
+                    "clave": "clave_demo",
+                    "desde": "01/01/2024",
+                    "hasta": "31/12/2024",
+                    "ubicacion_descarga": "./descargas/Hacienda/20987654321",
+                    "retry": "0",
+                },
+                {
+                    "procesar": "NO",
+                    "cuit_representante": "20111111111",
+                    "denominacion": "Ejemplo NO Hacienda",
+                    "representado_cuit": "20999999999",
+                    "clave": "clave_no",
+                    "desde": "01/01/2024",
+                    "hasta": "31/12/2024",
+                    "ubicacion_descarga": "./descargas/Hacienda/20999999999",
+                    "retry": "0",
+                },
+            ]
+        ),
+        "liquidacion_granos.xlsx": pd.DataFrame(
+            [
+                {
+                    "procesar": "SI",
+                    "cuit_representante": "20123456789",
+                    "clave": "clave_demo",
+                    "denominacion": "Empresa Demo Granos SA",
+                    "cuit_representado": "20987654321",
+                    "desde": "01/01/2024",
+                    "hasta": "31/12/2024",
+                    "ubicacion_descarga": "./descargas/Liquidacion_Granos/20987654321",
+                    "retry": "0",
+                },
+                {
+                    "procesar": "NO",
+                    "cuit_representante": "20111111111",
+                    "clave": "clave_no",
+                    "denominacion": "Ejemplo NO Granos",
+                    "cuit_representado": "",
+                    "desde": "01/01/2024",
+                    "hasta": "31/12/2024",
+                    "ubicacion_descarga": "./descargas/Liquidacion_Granos/20111111111",
+                    "retry": "0",
+                },
+            ]
+        ),
         "sct.xlsx": pd.DataFrame(
             [
                 {

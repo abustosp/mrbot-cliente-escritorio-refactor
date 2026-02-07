@@ -13,6 +13,8 @@ from mrbot_app.windows import (
     ConsultaCuitWindow,
     DeclaracionEnLineaWindow,
     GuiDescargaMC,
+    HaciendaWindow,
+    LiquidacionGranosWindow,
     MisFacilidadesWindow,
     RcelWindow,
     MisRetencionesWindow,
@@ -79,20 +81,22 @@ class MainMenu(tk.Tk):
 
         ttk.Button(btns, text="Descarga Mis Comprobantes", width=btn_width, command=self.open_mis_comprobantes).grid(row=0, column=0, padx=6, pady=4, sticky="nsew")
         ttk.Button(btns, text="Comprobantes en Linea (RCEL)", width=btn_width, command=self.open_rcel).grid(row=0, column=1, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="Sistema de Cuentas Tributarias (SCT)", width=btn_width, command=self.open_sct).grid(row=1, column=0, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="Cuenta Corriente (CCMA)", width=btn_width, command=self.open_ccma).grid(row=1, column=1, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="Mis Retenciones", width=btn_width, command=self.open_mis_retenciones).grid(row=2, column=0, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="SIFERE consultas", width=btn_width, command=self.open_sifere).grid(row=2, column=1, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="DDJJ en Linea", width=btn_width, command=self.open_declaracion_linea).grid(row=3, column=0, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="Mis Facilidades", width=btn_width, command=self.open_mis_facilidades).grid(row=3, column=1, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="Aportes en Linea", width=btn_width, command=self.open_aportes_linea).grid(row=4, column=0, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="Consulta Apocrifos", width=btn_width, command=self.open_apoc).grid(row=4, column=1, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="Consulta de CUIT", width=btn_width, command=self.open_cuit).grid(row=5, column=0, columnspan=2, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="Usuarios", width=btn_width, command=self.open_usuario).grid(row=6, column=0, columnspan=2, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="Control Monotributistas", width=btn_width, command=self.open_control_monotributistas).grid(row=7, column=0, columnspan=2, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Hacienda y Carne", width=btn_width, command=self.open_hacienda).grid(row=1, column=0, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Liquidacion de Granos", width=btn_width, command=self.open_liquidacion_granos).grid(row=1, column=1, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Sistema de Cuentas Tributarias (SCT)", width=btn_width, command=self.open_sct).grid(row=2, column=0, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Cuenta Corriente (CCMA)", width=btn_width, command=self.open_ccma).grid(row=2, column=1, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Mis Retenciones", width=btn_width, command=self.open_mis_retenciones).grid(row=3, column=0, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="SIFERE consultas", width=btn_width, command=self.open_sifere).grid(row=3, column=1, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="DDJJ en Linea", width=btn_width, command=self.open_declaracion_linea).grid(row=4, column=0, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Mis Facilidades", width=btn_width, command=self.open_mis_facilidades).grid(row=4, column=1, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Aportes en Linea", width=btn_width, command=self.open_aportes_linea).grid(row=5, column=0, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Consulta Apocrifos", width=btn_width, command=self.open_apoc).grid(row=5, column=1, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Consulta de CUIT", width=btn_width, command=self.open_cuit).grid(row=6, column=0, columnspan=2, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Usuarios", width=btn_width, command=self.open_usuario).grid(row=7, column=0, columnspan=2, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Control Monotributistas", width=btn_width, command=self.open_control_monotributistas).grid(row=8, column=0, columnspan=2, padx=6, pady=4, sticky="nsew")
 
         btns.columnconfigure((0, 1), weight=1, uniform="menu")
-        for r in range(8):
+        for r in range(9):
             btns.rowconfigure(r, weight=1)
 
     def current_config(self) -> tuple[str, str, str]:
@@ -146,6 +150,12 @@ class MainMenu(tk.Tk):
 
     def open_apoc(self) -> None:
         ApocrifosWindow(self, self.current_config, self.example_paths)
+
+    def open_hacienda(self) -> None:
+        HaciendaWindow(self, self.current_config, self.example_paths)
+
+    def open_liquidacion_granos(self) -> None:
+        LiquidacionGranosWindow(self, self.current_config, self.example_paths)
 
     def open_cuit(self) -> None:
         ConsultaCuitWindow(self, self.current_config, self.example_paths)
