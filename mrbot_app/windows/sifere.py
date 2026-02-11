@@ -214,12 +214,14 @@ class SifereWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         headers = build_headers(api_key, email)
         url = ensure_trailing_slash(base_url) + "api/v1/sifere/consulta"
 
+        df_to_process = self._filter_procesar(self.excel_df)
+        if df_to_process is None or df_to_process.empty:
+            self.set_progress(0, 0)
+            messagebox.showwarning("Sin filas a procesar", "No hay filas marcadas con procesar=SI.")
+            return
+
         # Copy for thread safety
-        df_copy = self._filter_procesar(self.excel_df) or pd.DataFrame()
-        if df_copy.empty:
-             messagebox.showwarning("Sin filas a procesar", "No hay filas marcadas con procesar=SI.")
-             return
-        df_copy = df_copy.copy()
+        df_copy = df_to_process.copy()
 
         self.clear_logs()
         self.log_start("SIFERE", {"modo": "masivo", "filas": len(df_copy)})

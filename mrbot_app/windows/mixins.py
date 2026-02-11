@@ -79,7 +79,8 @@ class ExcelHandlerMixin:
             return None
         filtered = df
         if "procesar" in filtered.columns:
-            filtered = filtered[filtered["procesar"].str.lower().isin(["si", "sí", "yes", "y", "1"])]
+            procesar_series = filtered["procesar"].astype(str).str.strip().str.lower()
+            filtered = filtered[procesar_series.isin(["si", "sí", "yes", "y", "1"])]
         return filtered
 
 
