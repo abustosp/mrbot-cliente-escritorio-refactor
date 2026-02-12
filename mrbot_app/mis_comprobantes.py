@@ -175,10 +175,14 @@ def consulta_mc(
     safe_payload = dict(payload)
     if "contrasena" in safe_payload:
         safe_payload["contrasena"] = "***"
+    request_start = datetime.now()
+    _log_message(f"REQUEST INICIO: {request_start.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}", log_fn)
     _log_request(safe_payload, log_fn)
+    _log_message("", log_fn)
 
     response = requests.post(url, headers=headers, json=payload)
     http_status = response.status_code
+    response_end = datetime.now()
 
     try:
         data = response.json()
@@ -190,10 +194,14 @@ def consulta_mc(
             "content": response.text[:500],
         }
         _log_error(f"Respuesta no JSON (HTTP {response.status_code})", log_fn)
+        _log_message(f"RESPONSE FIN: {response_end.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}", log_fn)
         _log_response(http_status, data, log_fn)
+        _log_message("", log_fn)
         return data
 
+    _log_message(f"RESPONSE FIN: {response_end.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}", log_fn)
     _log_response(http_status, data, log_fn)
+    _log_message("", log_fn)
     return data
 
 

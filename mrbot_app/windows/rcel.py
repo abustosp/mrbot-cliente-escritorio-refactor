@@ -224,14 +224,21 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
         self.clear_logs()
         self.log_start("RCEL", {"modo": "individual"})
 
-        self.run_in_thread(self._worker_individual, url, headers, payload)
+        self.run_in_thread(
+            self.run_with_log_block,
+            payload["representado_cuit"] or payload["cuit_representante"] or "sin_cuit",
+            self._worker_individual,
+            url,
+            headers,
+            payload,
+        )
 
     def _worker_individual(self, url, headers, payload):
         self.log_separator(payload["representado_cuit"])
-        self.log_request(self._redact(payload))
+        self.log_request_started(self._redact(payload))
         resp = safe_post(url, headers, payload)
         data = resp.get("data")
-        self.log_response(resp.get("http_status"), data)
+        self.log_response_finished(resp.get("http_status"), data)
 
         cuit_folder = payload["representado_cuit"]
         downloads, download_errors, download_dir = self._process_downloads(
@@ -293,7 +300,18 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
                 executor.submit(
-                    self._process_row_rcel, row, url, headers, default_desde, default_hasta, b64_pdf, minio_upload
+                    self.run_with_log_block,
+                    str(row.get("representado_cuit", "")).strip()
+                    or str(row.get("cuit_representante", "")).strip()
+                    or "sin_cuit",
+                    self._process_row_rcel,
+                    row,
+                    url,
+                    headers,
+                    default_desde,
+                    default_hasta,
+                    b64_pdf,
+                    minio_upload,
                 ): idx
                 for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
@@ -310,8 +328,8 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
                     result_row = future.result()
                     if result_row:
                         rows.append(result_row)
-                except Exception as e:
-                    self.log_error(f"Error en fila {idx}: {e}")
+                except Exception:
+                    pass
 
                 self.set_progress(completed, total)
 
@@ -342,7 +360,7 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
             "b64_pdf": b64_pdf,
             "minio_upload": minio_upload,
         }
-        self.log_request(self._redact(payload))
+        safe_payload = self._redact(payload)
 
         try:
             retry_val = int(row.get("retry", 0))
@@ -353,16 +371,14 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
         resp = {}
         data = {}
         for attempt in range(1, total_attempts + 1):
-            if attempt > 1:
-                self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
+            self.log_request_started(safe_payload, attempt=attempt, total_attempts=total_attempts)
 
             resp = safe_post(url, headers, payload)
             data = resp.get("data", {})
+            self.log_response_finished(resp.get("http_status"), data)
 
             if resp.get("http_status") == 200:
                 break
-
-        self.log_response(resp.get("http_status"), data)
 
         downloads, download_errors, download_dir_used = self._process_downloads(
             data, self.MODULE_DIR, cuit_repr, override_dir=row_download

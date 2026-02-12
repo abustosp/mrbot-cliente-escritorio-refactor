@@ -232,7 +232,14 @@ class DeclaracionEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMix
         self.clear_logs()
         self.log_start("Declaracion en Linea", {"modo": "individual"})
 
-        self.run_in_thread(self._worker_individual, url, headers, payload)
+        self.run_in_thread(
+            self.run_with_log_block,
+            cuit_repr or payload["cuit_representante"] or "sin_cuit",
+            self._worker_individual,
+            url,
+            headers,
+            payload,
+        )
 
     def _worker_individual(self, url, headers, payload):
         safe_payload = dict(payload)
@@ -240,11 +247,11 @@ class DeclaracionEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMix
         cuit_repr = payload.get("cuit_representado")
 
         self.log_separator(cuit_repr or payload["cuit_representante"])
-        self.log_request(safe_payload)
+        self.log_request_started(safe_payload)
 
         resp = safe_post(url, headers, payload)
         data = resp.get("data", {})
-        self.log_response(resp.get("http_status"), data)
+        self.log_response_finished(resp.get("http_status"), data)
         cuit_folder = cuit_repr or payload["cuit_representante"]
 
         downloads, errors, download_dir = self._process_downloads(data, self.MODULE_DIR, cuit_folder)
@@ -294,7 +301,16 @@ class DeclaracionEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMix
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
-                executor.submit(self._process_row_ddjj, row, url, headers): idx
+                executor.submit(
+                    self.run_with_log_block,
+                    str(row.get("cuit_representado", "")).strip()
+                    or str(row.get("cuit_representante", "")).strip()
+                    or "sin_cuit",
+                    self._process_row_ddjj,
+                    row,
+                    url,
+                    headers,
+                ): idx
                 for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
 
@@ -310,8 +326,8 @@ class DeclaracionEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMix
                     result = future.result()
                     if result:
                         rows.append(result)
-                except Exception as exc:
-                    self.log_error(f"Error en fila {idx}: {exc}")
+                except Exception:
+                    pass
 
                 self.set_progress(completed, total)
 
@@ -325,7 +341,7 @@ class DeclaracionEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMix
         cuit_rep = str(row.get("cuit_representante", "")).strip()
         cuit_repr = self._optional_value(str(row.get("cuit_representado", "")))
         row_download = str(row.get("ubicacion_descarga") or row.get("path_descarga") or row.get("carpeta_descarga") or "").strip()
-        self.log_separator(cuit_repr or cuit_rep)
+        cuit_folder = cuit_repr or cuit_rep
         payload = {
             "cuit_representante": cuit_rep,
             "clave_representante": str(row.get("clave_representante", "")),
@@ -338,7 +354,6 @@ class DeclaracionEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMix
         }
         safe_payload = dict(payload)
         safe_payload["clave_representante"] = "***"
-        self.log_request(safe_payload)
 
         try:
             retry_val = int(row.get("retry", 0))
@@ -349,16 +364,13 @@ class DeclaracionEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMix
         resp = {}
         data = {}
         for attempt in range(1, total_attempts + 1):
-            if attempt > 1:
-                self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
-
+            self.log_request_started(safe_payload, attempt=attempt, total_attempts=total_attempts)
             resp = safe_post(url, headers, payload)
             data = resp.get("data", {})
+            self.log_response_finished(resp.get("http_status"), data)
+
             if resp.get("http_status") == 200:
                 break
-
-        self.log_response(resp.get("http_status"), data)
-        cuit_folder = cuit_repr or cuit_rep
 
         downloads, errors, download_dir = self._process_downloads(
             data, self.MODULE_DIR, cuit_folder, override_dir=row_download

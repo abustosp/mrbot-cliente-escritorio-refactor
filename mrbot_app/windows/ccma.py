@@ -188,7 +188,15 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         url = ensure_trailing_slash(base_url) + "api/v1/ccma/consulta"
         self.clear_logs()
 
-        self.run_in_thread(self._worker_individual, url, headers, payload, pdf_requested)
+        self.run_in_thread(
+            self.run_with_log_block,
+            payload["cuit_representado"] or payload["cuit_representante"] or "sin_cuit",
+            self._worker_individual,
+            url,
+            headers,
+            payload,
+            pdf_requested,
+        )
 
     def _worker_individual(self, url, headers, payload, pdf_requested):
         safe_payload = dict(payload)
@@ -196,10 +204,10 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         cuit_label = payload["cuit_representado"] or payload["cuit_representante"]
         self.log_start("CCMA", {"modo": "individual"})
         self.log_separator(cuit_label)
-        self.log_request(safe_payload)
+        self.log_request_started(safe_payload)
         resp = safe_post(url, headers, payload)
         data = resp.get("data")
-        self.log_response(resp.get("http_status"), data)
+        self.log_response_finished(resp.get("http_status"), data)
         if resp.get("http_status") != 200:
             detail = resp.get("error") or resp.get("detail") or data
             self.log_error(f"HTTP {resp.get('http_status')}: {detail}")
@@ -267,7 +275,17 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
                 executor.submit(
-                    self._process_row_ccma, row, url, headers, movimientos_default, pdf_default, proxy_default
+                    self.run_with_log_block,
+                    str(row.get("cuit_representado", "")).strip()
+                    or str(row.get("cuit_representante", "")).strip()
+                    or "sin_cuit",
+                    self._process_row_ccma,
+                    row,
+                    url,
+                    headers,
+                    movimientos_default,
+                    pdf_default,
+                    proxy_default,
                 ): idx
                 for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
@@ -281,15 +299,19 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
                     break
 
                 try:
-                    result_row, result_movs, req_movs = future.result()
+                    result = future.result()
+                    if not result:
+                        self.set_progress(completed, total)
+                        continue
+                    result_row, result_movs, req_movs = result
                     if result_row:
                         rows.append(result_row)
                     if result_movs:
                         movimientos_rows.extend(result_movs)
                     if req_movs:
                         movimientos_requested = True
-                except Exception as e:
-                    self.log_error(f"Error en fila {idx}: {e}")
+                except Exception:
+                    pass
                 self.set_progress(completed, total)
 
         # Post processing involves creating DataFrame and saving Excel, which is safe in thread as it doesn't touch UI directly except via log_error
@@ -321,7 +343,6 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         safe_payload = dict(payload)
         safe_payload["clave_representante"] = "***"
         self.log_separator(cuit_repr or cuit_rep)
-        self.log_request(safe_payload)
 
         try:
             retry_val = int(row.get("retry", 0))
@@ -334,16 +355,15 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         http_status = None
 
         for attempt in range(1, total_attempts + 1):
-            if attempt > 1:
-                self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
+            self.log_request_started(safe_payload, attempt=attempt, total_attempts=total_attempts)
 
             resp = safe_post(url, headers, payload)
             http_status = resp.get("http_status")
             data = resp.get("data")
+            self.log_response_finished(http_status, data)
             if http_status == 200:
                 break
 
-        self.log_response(http_status, data)
         if http_status != 200:
             detail = resp.get("error") or resp.get("detail") or data
             self.log_error(f"HTTP {http_status}: {detail}")

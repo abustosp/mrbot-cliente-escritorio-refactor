@@ -321,14 +321,21 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
         url = ensure_trailing_slash(base_url) + "api/v1/sct/consulta"
         self.clear_logs()
 
-        self.run_in_thread(self._worker_individual, url, headers, payload)
+        self.run_in_thread(
+            self.run_with_log_block,
+            payload["cuit_representado"] or payload["cuit_login"] or "sin_cuit",
+            self._worker_individual,
+            url,
+            headers,
+            payload,
+        )
 
     def _worker_individual(self, url, headers, payload):
         self.log_start("SCT", {"modo": "individual"})
         self.log_separator(payload["cuit_representado"])
-        self.log_request(self._redact(payload))
+        self.log_request_started(self._redact(payload))
         resp = safe_post(url, headers, payload)
-        self.log_response(resp.get("http_status"), resp.get("data"))
+        self.log_response_finished(resp.get("http_status"), resp.get("data"))
         self.set_preview(self.result_box, json.dumps(resp, indent=2, ensure_ascii=False))
 
     def procesar_excel(self) -> None:
@@ -374,7 +381,17 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
-                executor.submit(self._process_row_sct, row, url, headers, defaults): idx
+                executor.submit(
+                    self.run_with_log_block,
+                    str(row.get("cuit_representado", "")).strip()
+                    or str(row.get("cuit_login", "")).strip()
+                    or "sin_cuit",
+                    self._process_row_sct,
+                    row,
+                    url,
+                    headers,
+                    defaults,
+                ): idx
                 for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
 
@@ -390,8 +407,8 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
                     result = future.result()
                     if result:
                         rows.append(result)
-                except Exception as e:
-                    self.log_error(f"Error en fila {idx}: {e}")
+                except Exception:
+                    pass
 
                 self.set_progress(completed, total)
 
@@ -458,7 +475,7 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
         self.log_separator(payload["cuit_representado"])
         self.log_info(f"Bloques activos -> deuda={include_deuda}, vencimientos={include_venc}, ddjj={include_ddjj}")
         self.log_info(f"Salidas solicitadas -> {json.dumps(outputs, ensure_ascii=False)}")
-        self.log_request(self._redact(payload))
+        safe_payload = self._redact(payload)
 
         try:
             retry_val = int(row.get("retry", 0))
@@ -469,15 +486,14 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
         resp = {}
         data = {}
         for attempt in range(1, total_attempts + 1):
-            if attempt > 1:
-                self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
+            self.log_request_started(safe_payload, attempt=attempt, total_attempts=total_attempts)
 
             resp = safe_post(url, headers, payload)
             data = resp.get("data", {})
+            self.log_response_finished(resp.get("http_status"), data)
             if resp.get("http_status") == 200:
                 break
 
-        self.log_response(resp.get("http_status"), data)
         downloads = 0
         download_errors: List[str] = []
         if isinstance(data, dict):

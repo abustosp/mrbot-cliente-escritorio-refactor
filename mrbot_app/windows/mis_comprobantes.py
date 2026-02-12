@@ -295,6 +295,8 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
 
         # Run worker
         self.run_in_thread(
+            self.run_with_log_block,
+            cuit_repr or cuit_inicio or "sin_cuit",
             self._worker_individual,
             desde, hasta, cuit_inicio, nombre_repr, cuit_repr, clave,
             descarga_emitidos, descarga_recibidos, carga_minio, b64, target_dir
@@ -356,7 +358,22 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
-                executor.submit(self._process_row_mc, row, default_desde, default_hasta): idx
+                executor.submit(
+                    self.run_with_log_block,
+                    str(
+                        row.get("representado_cuit", "")
+                        or row.get("cuit_representado", "")
+                        or row.get("cuit_inicio_sesion", "")
+                        or row.get("cuit_representante", "")
+                        or row.get("representado_nombre", "")
+                        or row.get("nombre_representado", "")
+                    ).strip()
+                    or "sin_cuit",
+                    self._process_row_mc,
+                    row,
+                    default_desde,
+                    default_hasta,
+                ): idx
                 for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
 
@@ -370,8 +387,8 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
 
                 try:
                     future.result()
-                except Exception as e:
-                    self.log_error(f"Error en fila {idx}: {e}")
+                except Exception:
+                    pass
 
                 self.set_progress(completed, total)
 

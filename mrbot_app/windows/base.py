@@ -2,6 +2,7 @@ import json
 import os
 import threading
 import queue
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Dict, Optional, Callable
 
@@ -32,6 +33,7 @@ class BaseWindow(tk.Toplevel):
         self.throbber = None
         self.abort_btn = None
         self.log_windows = []  # Keep track of open log windows
+        self._log_block_local = threading.local()
 
         # Traer ventana al frente
         self.lift()
@@ -99,12 +101,56 @@ class BaseWindow(tk.Toplevel):
         )
         return formatted + "\n"
 
+    def _format_precise_timestamp(self, value: Optional[datetime] = None) -> str:
+        dt = value or datetime.now()
+        return dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
+    def _log_block_stack(self) -> list:
+        stack = getattr(self._log_block_local, "stack", None)
+        if stack is None:
+            stack = []
+            self._log_block_local.stack = stack
+        return stack
+
+    @contextmanager
+    def log_block(self, label: str):
+        stack = self._log_block_stack()
+        block_label = str(label or "sin_identificador")
+        block = {"label": block_label, "lines": []}
+        stack.append(block)
+        self.log_message(f"EJECUCION INICIO: {self._format_precise_timestamp()}")
+        try:
+            yield
+        finally:
+            self.log_message(f"EJECUCION FIN: {self._format_precise_timestamp()}")
+            finished_block = stack.pop()
+            sep = "-" * 60
+            header = self._format_log_message(f"{sep}\nCONTRIBUYENTE: {block_label}\n{sep}")
+            content = header + "".join(finished_block["lines"])
+            if stack:
+                stack[-1]["lines"].append(content)
+            else:
+                self._append_log_widget(content)
+
+    def run_with_log_block(self, label: str, fn: Callable, *args, **kwargs):
+        with self.log_block(label):
+            try:
+                return fn(*args, **kwargs)
+            except Exception as exc:
+                self.log_error(f"Excepcion en bloque: {exc}")
+                return None
+
     def _prefix_lines(self, prefix: str, message: str) -> str:
         lines = str(message).splitlines() or [""]
         return "\n".join(f"{prefix}{line}" if line else prefix.rstrip() for line in lines)
 
     def log_message(self, message: str) -> None:
-        self._append_log_widget(self._format_log_message(message))
+        formatted = self._format_log_message(message)
+        stack = getattr(self._log_block_local, "stack", None)
+        if stack:
+            stack[-1]["lines"].append(formatted)
+            return
+        self._append_log_widget(formatted)
 
     def log_info(self, message: str) -> None:
         self.log_message(self._prefix_lines("INFO: ", message))
@@ -119,6 +165,30 @@ class BaseWindow(tk.Toplevel):
     def log_response(self, http_status: Any, payload: Any) -> None:
         serialized = json.dumps(payload, ensure_ascii=False, default=str)
         self.log_message(self._prefix_lines("RESPONSE: ", f"HTTP {http_status} - {serialized}"))
+
+    def log_request_started(
+        self,
+        payload: Any,
+        label: str = "REQUEST",
+        started_at: Optional[datetime] = None,
+        attempt: Optional[int] = None,
+        total_attempts: Optional[int] = None,
+    ) -> None:
+        if attempt is not None and total_attempts is not None:
+            self.log_info(f"Intento {attempt}/{total_attempts}")
+        self.log_message(f"{label} INICIO: {self._format_precise_timestamp(started_at)}")
+        self.log_request(payload, label=label)
+
+    def log_response_finished(
+        self,
+        http_status: Any,
+        payload: Any,
+        finished_at: Optional[datetime] = None,
+    ) -> None:
+        self.log_message("")
+        self.log_message(f"RESPONSE FIN: {self._format_precise_timestamp(finished_at)}")
+        self.log_response(http_status, payload)
+        self.log_message("")
 
     def log_start(self, title: str, details: Optional[Dict[str, Any]] = None) -> None:
         detail_text = ""

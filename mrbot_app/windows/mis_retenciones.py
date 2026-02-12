@@ -134,7 +134,14 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
         url = ensure_trailing_slash(base_url) + "api/v1/mis_retenciones/consulta"
         self.clear_logs()
 
-        self.run_in_thread(self._worker_individual, url, headers, payload)
+        self.run_in_thread(
+            self.run_with_log_block,
+            cuit_repr or payload["cuit_representante"] or "sin_cuit",
+            self._worker_individual,
+            url,
+            headers,
+            payload,
+        )
 
     def _worker_individual(self, url, headers, payload):
         safe_payload = dict(payload)
@@ -143,10 +150,10 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
 
         self.log_start("Mis Retenciones", {"modo": "individual"})
         self.log_separator(cuit_repr or payload["cuit_representante"])
-        self.log_request(safe_payload)
+        self.log_request_started(safe_payload)
         resp = safe_post(url, headers, payload)
         data = resp.get("data", {})
-        self.log_response(resp.get("http_status"), data)
+        self.log_response_finished(resp.get("http_status"), data)
         cuit_folder = cuit_repr or payload["cuit_representante"]
 
         downloads, errors, download_dir = self._process_downloads(
@@ -196,7 +203,18 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
-                executor.submit(self._process_row_retenciones, row, url, headers, default_desde, default_hasta): idx
+                executor.submit(
+                    self.run_with_log_block,
+                    str(row.get("cuit_representado", "")).strip()
+                    or str(row.get("cuit_representante", "")).strip()
+                    or "sin_cuit",
+                    self._process_row_retenciones,
+                    row,
+                    url,
+                    headers,
+                    default_desde,
+                    default_hasta,
+                ): idx
                 for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
 
@@ -212,8 +230,8 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
                     result = future.result()
                     if result:
                         rows.append(result)
-                except Exception as e:
-                    self.log_error(f"Error en fila {idx}: {e}")
+                except Exception:
+                    pass
 
                 self.set_progress(completed, total)
 
@@ -242,7 +260,6 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
         }
         safe_payload = dict(payload)
         safe_payload["clave_representante"] = "***"
-        self.log_request(safe_payload)
 
         try:
             retry_val = int(row.get("retry", 0))
@@ -253,15 +270,14 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
         resp = {}
         data = {}
         for attempt in range(1, total_attempts + 1):
-            if attempt > 1:
-                self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
+            self.log_request_started(safe_payload, attempt=attempt, total_attempts=total_attempts)
 
             resp = safe_post(url, headers, payload)
             data = resp.get("data", {})
+            self.log_response_finished(resp.get("http_status"), data)
             if resp.get("http_status") == 200:
                 break
 
-        self.log_response(resp.get("http_status"), data)
         cuit_folder = cuit_repr or cuit_rep
 
         downloads, errors, download_dir = self._process_downloads(

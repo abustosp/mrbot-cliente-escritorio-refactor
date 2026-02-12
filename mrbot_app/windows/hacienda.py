@@ -132,16 +132,23 @@ class HaciendaWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downl
         }
         url = ensure_trailing_slash(base_url) + "api/v1/hacienda/consulta"
         self.clear_logs()
-        self.run_in_thread(self._worker_individual, url, headers, payload)
+        self.run_in_thread(
+            self.run_with_log_block,
+            payload.get("representado_cuit") or payload.get("cuit_representante") or "sin_cuit",
+            self._worker_individual,
+            url,
+            headers,
+            payload,
+        )
 
     def _worker_individual(self, url, headers, payload):
         cuit_folder = payload.get("representado_cuit") or payload.get("cuit_representante")
         self.log_start("Hacienda", {"modo": "individual"})
         self.log_separator(cuit_folder or "sin_cuit")
-        self.log_request(self._redact(payload))
+        self.log_request_started(self._redact(payload))
         resp = safe_post(url, headers, payload)
         data = resp.get("data", {})
-        self.log_response(resp.get("http_status"), data)
+        self.log_response_finished(resp.get("http_status"), data)
 
         downloads, errors, download_dir = self._process_downloads(
             data, self.MODULE_DIR, cuit_folder or "desconocido", service_key="hacienda"
@@ -187,7 +194,17 @@ class HaciendaWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downl
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
-                executor.submit(self._process_row_hacienda, row, url, headers, default_desde, default_hasta): idx
+                executor.submit(
+                    self.run_with_log_block,
+                    str(row.get("representado_cuit") or row.get("cuit_representado") or row.get("cuit_representante") or "").strip()
+                    or "sin_cuit",
+                    self._process_row_hacienda,
+                    row,
+                    url,
+                    headers,
+                    default_desde,
+                    default_hasta,
+                ): idx
                 for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
 
@@ -203,8 +220,8 @@ class HaciendaWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downl
                     result = future.result()
                     if result:
                         rows.append(result)
-                except Exception as exc:
-                    self.log_error(f"Error en fila {idx}: {exc}")
+                except Exception:
+                    pass
 
                 self.set_progress(completed, total)
 
@@ -232,7 +249,7 @@ class HaciendaWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downl
             "proxy_request": False,
         }
         self.log_separator(cuit_repr or cuit_rep or "sin_cuit")
-        self.log_request(self._redact(payload))
+        safe_payload = self._redact(payload)
 
         try:
             retry_val = int(row.get("retry", 0))
@@ -243,15 +260,14 @@ class HaciendaWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downl
         resp: Dict[str, Any] = {}
         data: Dict[str, Any] = {}
         for attempt in range(1, total_attempts + 1):
-            if attempt > 1:
-                self.log_info(f"Reintentando... (Intento {attempt}/{total_attempts})")
+            self.log_request_started(safe_payload, attempt=attempt, total_attempts=total_attempts)
 
             resp = safe_post(url, headers, payload)
             data = resp.get("data", {})
+            self.log_response_finished(resp.get("http_status"), data)
             if resp.get("http_status") == 200:
                 break
 
-        self.log_response(resp.get("http_status"), data)
         cuit_folder = cuit_repr or cuit_rep or "desconocido"
         downloads, errors, download_dir = self._process_downloads(
             data, self.MODULE_DIR, cuit_folder, override_dir=row_download, service_key="hacienda"
