@@ -316,6 +316,7 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
 
         # Post processing involves creating DataFrame and saving Excel, which is safe in thread as it doesn't touch UI directly except via log_error
         self._post_process_excel(rows, movimientos_rows, movimientos_requested)
+        self.log_info("Procesamiento masivo finalizado.")
 
     def _process_row_ccma(self, row, url, headers, movimientos_default, pdf_default, proxy_default):
         if self._abort_event.is_set():

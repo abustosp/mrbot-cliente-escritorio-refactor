@@ -127,10 +127,11 @@ class BaseWindow(tk.Toplevel):
             sep = "-" * 60
             header = self._format_log_message(f"{sep}\nCONTRIBUYENTE: {block_label}\n{sep}")
             content = header + "".join(finished_block["lines"])
+            content_with_gap = content + self._format_log_message("")
             if stack:
-                stack[-1]["lines"].append(content)
+                stack[-1]["lines"].append(content_with_gap)
             else:
-                self._append_log_widget(content)
+                self._append_log_widget(content_with_gap)
 
     def run_with_log_block(self, label: str, fn: Callable, *args, **kwargs):
         with self.log_block(label):

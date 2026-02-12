@@ -227,6 +227,7 @@ class HaciendaWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downl
 
         out_df = pd.DataFrame(rows)
         self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))
+        self.log_info("Procesamiento masivo finalizado.")
 
     def _process_row_hacienda(self, row, url, headers, default_desde, default_hasta):
         if self._abort_event.is_set():

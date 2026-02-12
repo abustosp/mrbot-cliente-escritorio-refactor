@@ -392,7 +392,7 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
 
                 self.set_progress(completed, total)
 
-        self.log_info("Proceso masivo finalizado.")
+        self.log_info("Procesamiento masivo finalizado.")
 
     def _process_row_mc(self, row, default_desde, default_hasta):
         if self._abort_event.is_set():
