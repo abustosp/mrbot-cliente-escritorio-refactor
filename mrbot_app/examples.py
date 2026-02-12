@@ -214,6 +214,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "denominacion": "Empresa Ejemplo SA",
                     "desde": "01/11/2025",
                     "hasta": "30/11/2025",
+                    "impuestos": "216,217,219,353,767,787",
                     "ubicacion_descarga": "./descargas/Mis_Retenciones/30987654321",
                     "retry": "0",
                 },
@@ -225,6 +226,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "denominacion": "Ejemplo NO",
                     "desde": "01/01/2024",
                     "hasta": "31/01/2024",
+                    "impuestos": "",
                     "ubicacion_descarga": "./descargas/Mis_Retenciones/20999999999",
                     "retry": "0",
                 },
@@ -403,7 +405,7 @@ def ensure_example_excels() -> Dict[str, str]:
         paths[name] = path
         expected_cols = [c.strip().lower() for c in df.columns]
         should_write = not os.path.exists(path)
-        if not should_write and name == "ccma.xlsx":
+        if not should_write and name in {"ccma.xlsx", "mis_retenciones.xlsx"}:
             try:
                 current_cols = [c.strip().lower() for c in pd.read_excel(path, nrows=0).columns]
                 if any(col not in current_cols for col in expected_cols):

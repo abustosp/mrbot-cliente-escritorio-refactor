@@ -20,6 +20,7 @@ from mrbot_app.windows.mixins import (
 
 class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadHandlerMixin):
     MODULE_DIR = "Mis_Retenciones"
+    ALLOWED_IMPUESTOS = ["216", "217", "219", "353", "767", "787"]
 
     def __init__(self, master=None, config_provider=None, example_paths: Optional[Dict[str, str]] = None):
         super().__init__(master, title="Mis Retenciones", config_provider=config_provider)
@@ -50,14 +51,17 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
         ttk.Label(inputs, text="Clave representante").grid(row=1, column=0, sticky="w", padx=4, pady=2)
         ttk.Label(inputs, text="CUIT representado").grid(row=2, column=0, sticky="w", padx=4, pady=2)
         ttk.Label(inputs, text="Denominacion").grid(row=3, column=0, sticky="w", padx=4, pady=2)
+        ttk.Label(inputs, text="Impuestos (216,217,219,353,767,787 | sep: , ; |)").grid(row=4, column=0, sticky="w", padx=4, pady=2)
         self.cuit_rep_var = tk.StringVar()
         self.clave_rep_var = tk.StringVar()
         self.cuit_repr_var = tk.StringVar()
         self.denominacion_var = tk.StringVar()
+        self.impuestos_var = tk.StringVar()
         ttk.Entry(inputs, textvariable=self.cuit_rep_var, width=25).grid(row=0, column=1, padx=4, pady=2, sticky="ew")
         ttk.Entry(inputs, textvariable=self.clave_rep_var, width=25, show="*").grid(row=1, column=1, padx=4, pady=2, sticky="ew")
         ttk.Entry(inputs, textvariable=self.cuit_repr_var, width=25).grid(row=2, column=1, padx=4, pady=2, sticky="ew")
         ttk.Entry(inputs, textvariable=self.denominacion_var, width=25).grid(row=3, column=1, padx=4, pady=2, sticky="ew")
+        ttk.Entry(inputs, textvariable=self.impuestos_var, width=25).grid(row=4, column=1, padx=4, pady=2, sticky="ew")
         inputs.columnconfigure(1, weight=1)
 
         # Download path (Mixin)
@@ -96,6 +100,55 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
         clean = (value or "").strip()
         return clean if clean else None
 
+    def _coerce_impuesto(self, value: Any) -> Optional[str]:
+        if value is None or isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return str(value)
+        if isinstance(value, float):
+            if value.is_integer():
+                return str(int(value))
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        if text.endswith(".0") and text[:-2].isdigit():
+            text = text[:-2]
+        if text.isdigit():
+            return text
+        return None
+
+    def _parse_impuestos(self, value: Any) -> tuple[List[str], Optional[str]]:
+        if value is None:
+            return [], None
+        if isinstance(value, list):
+            items = value
+        else:
+            text = str(value).strip()
+            if not text:
+                return [], None
+            text = text.replace(";", ",").replace("|", ",")
+            items = [part.strip() for part in text.split(",") if part.strip()]
+
+        impuestos: List[str] = []
+        invalid: List[str] = []
+        allowed = set(self.ALLOWED_IMPUESTOS)
+
+        for item in items:
+            impuesto = self._coerce_impuesto(item)
+            if impuesto is None or impuesto not in allowed:
+                invalid.append(str(item).strip())
+                continue
+            if impuesto not in impuestos:
+                impuestos.append(impuesto)
+
+        if invalid:
+            valid_text = ", ".join(self.ALLOWED_IMPUESTOS)
+            invalid_text = ", ".join(invalid)
+            return [], f"Impuestos invalidos: {invalid_text}. Valores permitidos: {valid_text}."
+
+        return impuestos, None
+
     def _extract_links(self, data: Any) -> List[Dict[str, str]]:
         links: List[Dict[str, str]] = []
         seen: set[tuple[str, str]] = set()
@@ -120,6 +173,10 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
     def consulta_individual(self) -> None:
         base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
+        impuestos, error = self._parse_impuestos(self.impuestos_var.get())
+        if error:
+            messagebox.showerror("Error", error)
+            return
         cuit_repr = self._optional_value(self.cuit_repr_var.get())
         payload = {
             "cuit_representante": self.cuit_rep_var.get().strip(),
@@ -128,6 +185,7 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
             "denominacion": self.denominacion_var.get().strip(),
             "desde": format_date_str(self.desde_var.get().strip()),
             "hasta": format_date_str(self.hasta_var.get().strip()),
+            "impuestos": impuestos,
             "carga_minio": True,
             "proxy_request": False,
         }
@@ -247,8 +305,21 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
         cuit_repr = self._optional_value(str(row.get("cuit_representado", "")))
         desde = format_date_str(row.get("desde", "")) or default_desde
         hasta = format_date_str(row.get("hasta", "")) or default_hasta
+        impuestos, error = self._parse_impuestos(row.get("impuestos", ""))
         row_download = str(row.get("ubicacion_descarga") or row.get("path_descarga") or row.get("carpeta_descarga") or "").strip()
         self.log_separator(cuit_repr or cuit_rep)
+        if error:
+            self.log_error(error)
+            return {
+                "cuit_representado": cuit_repr or cuit_rep,
+                "http_status": None,
+                "success": False,
+                "message": error,
+                "descargas": 0,
+                "errores_descarga": None,
+                "carpeta_descarga": None,
+            }
+
         payload = {
             "cuit_representante": cuit_rep,
             "clave_representante": str(row.get("clave_representante", "")),
@@ -256,6 +327,7 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
             "denominacion": str(row.get("denominacion", "")).strip(),
             "desde": desde,
             "hasta": hasta,
+            "impuestos": impuestos,
             "carga_minio": True,
             "proxy_request": False,
         }
