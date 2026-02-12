@@ -15,13 +15,14 @@ from mrbot_app.windows import (
     GuiDescargaMC,
     HaciendaWindow,
     LiquidacionGranosWindow,
+    PagoDevolucionesWindow,
     MisFacilidadesWindow,
     RcelWindow,
     MisRetencionesWindow,
     SifereWindow,
     SctWindow,
-    UsuarioWindow,
     ControlMonotributistasWindow,
+    UsuarioWindow,
 )
 from mrbot_app.windows.base import ConfigPane
 
@@ -89,11 +90,12 @@ class MainMenu(tk.Tk):
         ttk.Button(btns, text="SIFERE consultas", width=btn_width, command=self.open_sifere).grid(row=3, column=1, padx=6, pady=4, sticky="nsew")
         ttk.Button(btns, text="DDJJ en Linea", width=btn_width, command=self.open_declaracion_linea).grid(row=4, column=0, padx=6, pady=4, sticky="nsew")
         ttk.Button(btns, text="Mis Facilidades", width=btn_width, command=self.open_mis_facilidades).grid(row=4, column=1, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="Aportes en Linea", width=btn_width, command=self.open_aportes_linea).grid(row=5, column=0, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="Consulta Apocrifos", width=btn_width, command=self.open_apoc).grid(row=5, column=1, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="Consulta de CUIT", width=btn_width, command=self.open_cuit).grid(row=6, column=0, columnspan=2, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="Usuarios", width=btn_width, command=self.open_usuario).grid(row=7, column=0, columnspan=2, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="Control Monotributistas", width=btn_width, command=self.open_control_monotributistas).grid(row=8, column=0, columnspan=2, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Pago Devoluciones", width=btn_width, command=self.open_pago_devoluciones).grid(row=5, column=0, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Aportes en Linea", width=btn_width, command=self.open_aportes_linea).grid(row=5, column=1, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Consulta Apocrifos", width=btn_width, command=self.open_apoc).grid(row=6, column=0, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Consulta de CUIT", width=btn_width, command=self.open_cuit).grid(row=6, column=1, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Control Monotributistas", width=btn_width, command=self.open_control_monotributistas).grid(row=7, column=0, columnspan=2, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Usuarios", width=btn_width, command=self.open_usuario).grid(row=8, column=0, columnspan=2, padx=6, pady=4, sticky="nsew")
 
         btns.columnconfigure((0, 1), weight=1, uniform="menu")
         for r in range(9):
@@ -145,6 +147,9 @@ class MainMenu(tk.Tk):
     def open_mis_facilidades(self) -> None:
         MisFacilidadesWindow(self, self.current_config, self.example_paths)
 
+    def open_pago_devoluciones(self) -> None:
+        PagoDevolucionesWindow(self, self.current_config, self.example_paths)
+
     def open_aportes_linea(self) -> None:
         AportesEnLineaWindow(self, self.current_config, self.example_paths)
 
@@ -160,11 +165,11 @@ class MainMenu(tk.Tk):
     def open_cuit(self) -> None:
         ConsultaCuitWindow(self, self.current_config, self.example_paths)
 
-    def open_usuario(self) -> None:
-        UsuarioWindow(self, self.current_config)
-
     def open_control_monotributistas(self) -> None:
         ControlMonotributistasWindow(self, self.current_config, self.example_paths)
+
+    def open_usuario(self) -> None:
+        UsuarioWindow(self, self.current_config)
 
 
 if __name__ == "__main__":

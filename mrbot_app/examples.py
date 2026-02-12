@@ -304,6 +304,30 @@ def ensure_example_excels() -> Dict[str, str]:
                 },
             ]
         ),
+        "pago_devoluciones.xlsx": pd.DataFrame(
+            [
+                {
+                    "procesar": "SI",
+                    "cuit_representante": "20123456789",
+                    "clave_representante": "tu_clave_fiscal",
+                    "cuit_representado": "30987654321",
+                    "proxy_request": "NO",
+                    "carga_minio": "SI",
+                    "ubicacion_descarga": "./descargas/Pago_Devoluciones/30987654321",
+                    "retry": "0",
+                },
+                {
+                    "procesar": "NO",
+                    "cuit_representante": "20111111111",
+                    "clave_representante": "clave_no",
+                    "cuit_representado": "20999999999",
+                    "proxy_request": "NO",
+                    "carga_minio": "SI",
+                    "ubicacion_descarga": "./descargas/Pago_Devoluciones/20999999999",
+                    "retry": "0",
+                },
+            ]
+        ),
         "aportes_en_linea.xlsx": pd.DataFrame(
             [
                 {
