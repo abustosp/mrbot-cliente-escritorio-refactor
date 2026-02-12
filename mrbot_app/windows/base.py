@@ -235,11 +235,11 @@ class BaseWindow(tk.Toplevel):
     ) -> tk.Text:
         btns_frame = ttk.Frame(parent)
         btns_frame.pack(fill="x", pady=(6, 0))
-        toggle_btn = ttk.Button(btns_frame, text="Mostrar logs")
-        toggle_btn.pack(side="left")
-        export_btn = ttk.Button(btns_frame, text="Exportar logs")
-        open_new_btn = ttk.Button(btns_frame, text="Abrir en nueva ventana")
+        open_new_btn = ttk.Button(btns_frame, text="Abrir logs")
+        open_new_btn.pack(side="left")
 
+        # Widget interno donde se acumulan los logs.
+        # Se mantiene oculto en la ventana principal y se replica en la emergente.
         log_frame = ttk.LabelFrame(parent, text=title)
         log_text = tk.Text(
             log_frame,
@@ -251,15 +251,10 @@ class BaseWindow(tk.Toplevel):
         log_text.pack(fill="both", expand=True)
         log_text.configure(state="disabled")
 
-        visible = not start_hidden
-        if visible:
-            log_frame.pack(fill="both", expand=True, pady=(2, 0))
-            export_btn.pack(side="left", padx=(6, 0))
-            open_new_btn.pack(side="left", padx=(6, 0))
-            toggle_btn.configure(text="Ocultar logs")
+        # Compatibilidad: mantener parámetro start_hidden aunque ahora siempre ocultamos en principal.
+        _ = start_hidden
 
-        def _export_logs() -> None:
-            contents = log_text.get("1.0", tk.END).rstrip()
+        def _export_logs(contents: str) -> None:
             timestamp = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
             default_name = f"logs - {service} - {timestamp}.txt"
             path = filedialog.asksaveasfilename(
@@ -279,21 +274,6 @@ class BaseWindow(tk.Toplevel):
             except Exception as exc:
                 messagebox.showerror("Error", f"No se pudo guardar los logs: {exc}")
 
-        def _toggle() -> None:
-            nonlocal visible
-            if visible:
-                log_frame.pack_forget()
-                export_btn.pack_forget()
-                open_new_btn.pack_forget()
-                toggle_btn.configure(text="Mostrar logs")
-                visible = False
-            else:
-                log_frame.pack(fill="both", expand=True, pady=(2, 0))
-                export_btn.pack(side="left", padx=(6, 0))
-                open_new_btn.pack(side="left", padx=(6, 0))
-                toggle_btn.configure(text="Ocultar logs")
-                visible = True
-
         def _open_new_window() -> None:
             top = tk.Toplevel(self)
             top.title(f"Logs - {service}")
@@ -302,13 +282,25 @@ class BaseWindow(tk.Toplevel):
                 top.iconbitmap(os.path.join("bin", "ABP-blanco-en-fondo-negro.ico"))
             except Exception:
                 pass
+
+            actions = ttk.Frame(top)
+            actions.pack(fill="x", padx=8, pady=(8, 4))
+            export_btn = ttk.Button(actions, text="Exportar TXT")
+            export_btn.pack(side="left")
+
             txt = scrolledtext.ScrolledText(top, wrap="word", background="#1b1b1b", foreground="#ffffff")
-            txt.pack(fill="both", expand=True)
+            txt.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
             # Copy current logs
             current_content = log_text.get("1.0", tk.END)
             txt.insert("1.0", current_content)
             txt.configure(state="disabled")
+
+            def _export_from_window() -> None:
+                contents = txt.get("1.0", tk.END).rstrip()
+                _export_logs(contents)
+
+            export_btn.configure(command=_export_from_window)
 
             self.log_windows.append(txt)
 
@@ -319,8 +311,6 @@ class BaseWindow(tk.Toplevel):
 
             top.protocol("WM_DELETE_WINDOW", _on_close)
 
-        toggle_btn.configure(command=_toggle)
-        export_btn.configure(command=_export_logs)
         open_new_btn.configure(command=_open_new_window)
         return log_text
 
