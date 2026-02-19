@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from mrbot_app.config import get_max_workers
-from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, safe_post
+from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, parse_bool_cell, safe_post
 from mrbot_app.windows.base import BaseWindow
 from mrbot_app.windows.minio_helpers import build_link, collect_minio_links
 from mrbot_app.windows.mixins import DownloadHandlerMixin, ExcelHandlerMixin
@@ -33,7 +33,7 @@ class AportesEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         self.add_info_label(
             container,
             "Consulta individual o masiva. Descarga automatica desde MinIO (archivo_historico_minio=True) "
-            "con proxy_request=False fijo.",
+            "con proxy_request configurable.",
         )
 
         inputs = ttk.Frame(container)
@@ -48,6 +48,11 @@ class AportesEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         ttk.Entry(inputs, textvariable=self.clave_var, width=25, show="*").grid(row=1, column=1, padx=4, pady=2, sticky="ew")
         ttk.Entry(inputs, textvariable=self.cuit_repr_var, width=25).grid(row=2, column=1, padx=4, pady=2, sticky="ew")
         inputs.columnconfigure(1, weight=1)
+
+        opts = ttk.Frame(container)
+        opts.pack(fill="x", pady=2)
+        self.proxy_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(opts, text="proxy_request", variable=self.proxy_var).grid(row=0, column=0, padx=4, pady=2, sticky="w")
 
         # Download Path
         self.add_download_path_frame(container)
@@ -106,7 +111,7 @@ class AportesEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             "cuit_representado": cuit_repr,
             "archivo_historico_b64": False,
             "archivo_historico_minio": True,
-            "proxy_request": False,
+            "proxy_request": bool(self.proxy_var.get()),
         }
         url = ensure_trailing_slash(base_url) + "api/v1/aportes-en-linea/consulta"
         self.clear_logs()
@@ -145,6 +150,7 @@ class AportesEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
         url = ensure_trailing_slash(base_url) + "api/v1/aportes-en-linea/consulta"
+        default_proxy = bool(self.proxy_var.get())
 
         # Copy for thread safety
         df_copy = df_to_process.copy()
@@ -152,9 +158,9 @@ class AportesEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         self.clear_logs()
         self.log_start("Aportes en Linea", {"modo": "masivo", "filas": len(df_copy)})
 
-        self.run_in_thread(self._worker_excel, df_copy, url, headers)
+        self.run_in_thread(self._worker_excel, df_copy, url, headers, default_proxy)
 
-    def _worker_excel(self, df, url, headers):
+    def _worker_excel(self, df, url, headers, default_proxy):
         rows: List[Dict[str, Any]] = []
         total = len(df)
         self.set_progress(0, total)
@@ -162,7 +168,7 @@ class AportesEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
-                executor.submit(self._process_row_aportes, row, url, headers): idx
+                executor.submit(self._process_row_aportes, row, url, headers, default_proxy): idx
                 for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
 
@@ -186,13 +192,16 @@ class AportesEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         out_df = pd.DataFrame(rows)
         self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))
 
-    def _process_row_aportes(self, row, url, headers):
+    def _process_row_aportes(self, row, url, headers, default_proxy):
         if self._abort_event.is_set():
             return None
 
         cuit_login = str(row.get("cuit_login", "")).strip()
         cuit_repr = self._optional_value(str(row.get("cuit_representado", "")))
         row_download = str(row.get("ubicacion_descarga") or row.get("path_descarga") or row.get("carpeta_descarga") or "").strip()
+        proxy_request = None
+        if "proxy_request" in row.index:
+            proxy_request = parse_bool_cell(row.get("proxy_request"), default=default_proxy)
         self.log_separator(cuit_repr or cuit_login)
         payload = {
             "cuit_login": cuit_login,
@@ -200,8 +209,9 @@ class AportesEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             "cuit_representado": cuit_repr,
             "archivo_historico_b64": False,
             "archivo_historico_minio": True,
-            "proxy_request": False,
         }
+        if proxy_request is not None:
+            payload["proxy_request"] = proxy_request
         safe_payload = dict(payload)
         safe_payload["clave"] = "***"
         self.log_request(safe_payload)

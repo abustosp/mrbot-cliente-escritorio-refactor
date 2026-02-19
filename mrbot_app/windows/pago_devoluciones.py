@@ -260,16 +260,19 @@ class PagoDevolucionesWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin
         cuit_rep = str(row.get("cuit_representante", "")).strip()
         cuit_repr = self._optional_value(str(row.get("cuit_representado", "")))
         row_download = str(row.get("ubicacion_descarga") or row.get("path_descarga") or row.get("carpeta_descarga") or "").strip()
-        proxy_request = self._bool_cell(row.get("proxy_request", ""), default_proxy)
+        proxy_request = None
+        if "proxy_request" in row.index:
+            proxy_request = self._bool_cell(row.get("proxy_request", ""), default_proxy)
         carga_minio = self._bool_cell(row.get("carga_minio", ""), default_carga_minio)
 
         payload = {
             "cuit_representante": cuit_rep,
             "clave_representante": str(row.get("clave_representante", "")),
             "cuit_representado": cuit_repr,
-            "proxy_request": proxy_request,
             "carga_minio": carga_minio,
         }
+        if proxy_request is not None:
+            payload["proxy_request"] = proxy_request
         safe_payload = dict(payload)
         safe_payload["clave_representante"] = "***"
         self.log_separator(cuit_repr or cuit_rep)

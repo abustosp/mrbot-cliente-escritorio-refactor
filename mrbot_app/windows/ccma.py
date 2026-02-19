@@ -325,6 +325,9 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         cuit_rep = str(row.get("cuit_representante", "")).strip()
         cuit_repr = str(row.get("cuit_representado", "")).strip()
         movimientos_flag = parse_bool_cell(row.get("movimientos"), default=movimientos_default)
+        proxy_request = None
+        if "proxy_request" in row.index:
+            proxy_request = parse_bool_cell(row.get("proxy_request"), default=proxy_default)
 
         # Special case for pdf flag from excel which could be None to use default
         pdf_flag = self._parse_optional_bool(row.get("pdf"))
@@ -335,9 +338,10 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             "cuit_representante": cuit_rep,
             "clave_representante": str(row.get("clave_representante", "")),
             "cuit_representado": cuit_repr,
-            "proxy_request": proxy_default,
             "movimientos": movimientos_flag,
         }
+        if proxy_request is not None:
+            payload["proxy_request"] = proxy_request
         if pdf_flag:
             payload["pdf"] = True
 

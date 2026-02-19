@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from mrbot_app.config import get_max_workers
-from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, format_date_str, safe_post
+from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, format_date_str, parse_bool_cell, safe_post
 from mrbot_app.windows.base import BaseWindow
 from mrbot_app.windows.minio_helpers import build_link, collect_minio_links
 from mrbot_app.windows.mixins import (
@@ -39,7 +39,7 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
         self.add_info_label(
             container,
             "Consulta individual o masiva. Descarga automatica desde MinIO (carga_minio=True) "
-            "con proxy_request=False fijo. Soporta Excel con columnas requeridas.",
+            "con proxy_request configurable. Soporta Excel con columnas requeridas.",
         )
 
         # Dates (Mixin)
@@ -63,6 +63,11 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
         ttk.Entry(inputs, textvariable=self.denominacion_var, width=25).grid(row=3, column=1, padx=4, pady=2, sticky="ew")
         ttk.Entry(inputs, textvariable=self.impuestos_var, width=25).grid(row=4, column=1, padx=4, pady=2, sticky="ew")
         inputs.columnconfigure(1, weight=1)
+
+        opts = ttk.Frame(container)
+        opts.pack(fill="x", pady=2)
+        self.proxy_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(opts, text="proxy_request", variable=self.proxy_var).grid(row=0, column=0, padx=4, pady=2, sticky="w")
 
         # Download path (Mixin)
         self.add_download_path_frame(container)
@@ -187,7 +192,7 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
             "hasta": format_date_str(self.hasta_var.get().strip()),
             "impuestos": impuestos,
             "carga_minio": True,
-            "proxy_request": False,
+            "proxy_request": bool(self.proxy_var.get()),
         }
         url = ensure_trailing_slash(base_url) + "api/v1/mis_retenciones/consulta"
         self.clear_logs()
@@ -244,6 +249,7 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
         # Capture defaults from UI
         default_desde = format_date_str(self.desde_var.get().strip())
         default_hasta = format_date_str(self.hasta_var.get().strip())
+        default_proxy = bool(self.proxy_var.get())
 
         # Copy for thread safety
         df_copy = df_to_process.copy()
@@ -251,9 +257,9 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
         self.clear_logs()
         self.log_start("Mis Retenciones", {"modo": "masivo", "filas": len(df_copy)})
 
-        self.run_in_thread(self._worker_excel, df_copy, url, headers, default_desde, default_hasta)
+        self.run_in_thread(self._worker_excel, df_copy, url, headers, default_desde, default_hasta, default_proxy)
 
-    def _worker_excel(self, df, url, headers, default_desde, default_hasta):
+    def _worker_excel(self, df, url, headers, default_desde, default_hasta, default_proxy):
         rows: List[Dict[str, Any]] = []
         total = len(df)
         self.set_progress(0, total)
@@ -272,6 +278,7 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
                     headers,
                     default_desde,
                     default_hasta,
+                    default_proxy,
                 ): idx
                 for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
@@ -297,7 +304,7 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
         self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))
         self.log_info("Procesamiento masivo finalizado.")
 
-    def _process_row_retenciones(self, row, url, headers, default_desde, default_hasta):
+    def _process_row_retenciones(self, row, url, headers, default_desde, default_hasta, default_proxy):
         if self._abort_event.is_set():
             return None
 
@@ -306,6 +313,9 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
         desde = format_date_str(row.get("desde", "")) or default_desde
         hasta = format_date_str(row.get("hasta", "")) or default_hasta
         impuestos, error = self._parse_impuestos(row.get("impuestos", ""))
+        proxy_request = None
+        if "proxy_request" in row.index:
+            proxy_request = parse_bool_cell(row.get("proxy_request"), default=default_proxy)
         row_download = str(row.get("ubicacion_descarga") or row.get("path_descarga") or row.get("carpeta_descarga") or "").strip()
         self.log_separator(cuit_repr or cuit_rep)
         if error:
@@ -329,8 +339,9 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
             "hasta": hasta,
             "impuestos": impuestos,
             "carga_minio": True,
-            "proxy_request": False,
         }
+        if proxy_request is not None:
+            payload["proxy_request"] = proxy_request
         safe_payload = dict(payload)
         safe_payload["clave_representante"] = "***"
 

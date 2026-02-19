@@ -461,6 +461,8 @@ def consulta_mc_csv(
 
         descarga_emitidos = _to_bool(dato.get("descarga_emitidos", ""), default=False)
         descarga_recibidos = _to_bool(dato.get("descarga_recibidos", ""), default=False)
+        proxy_request_raw = _to_str(dato.get("proxy_request", ""))
+        proxy_request = None if not proxy_request_raw else _to_bool(proxy_request_raw, default=False)
 
         label = f"{representado_nombre} ({representado_cuit})" if representado_cuit else representado_nombre
         _log_separator(label, log_fn)
@@ -483,6 +485,7 @@ def consulta_mc_csv(
                 descarga_recibidos,
                 carga_minio=True,
                 carga_json=False,
+                proxy_request=proxy_request,
                 log_fn=log_fn,
             )
 
@@ -498,6 +501,7 @@ def consulta_mc_csv(
                             "representado_cuit": representado_cuit,
                             "descarga_emitidos": descarga_emitidos,
                             "descarga_recibidos": descarga_recibidos,
+                            "proxy_request": proxy_request,
                         },
                         "error": str(error_msg),
                     }

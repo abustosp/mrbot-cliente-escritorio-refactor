@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from mrbot_app.config import get_max_workers
-from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, format_date_str, safe_post
+from mrbot_app.helpers import build_headers, df_preview, ensure_trailing_slash, format_date_str, parse_bool_cell, safe_post
 from mrbot_app.windows.base import BaseWindow
 from mrbot_app.windows.minio_helpers import build_link, collect_minio_links
 from mrbot_app.windows.mixins import (
@@ -60,6 +60,11 @@ class LiquidacionGranosWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMix
         ttk.Entry(inputs, textvariable=self.denominacion_var, width=25).grid(row=2, column=1, padx=4, pady=2, sticky="ew")
         ttk.Entry(inputs, textvariable=self.cuit_repr_var, width=25).grid(row=3, column=1, padx=4, pady=2, sticky="ew")
         inputs.columnconfigure(1, weight=1)
+
+        opts = ttk.Frame(container)
+        opts.pack(fill="x", pady=2)
+        self.proxy_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(opts, text="proxy_request", variable=self.proxy_var).grid(row=0, column=0, padx=4, pady=2, sticky="w")
 
         self.add_download_path_frame(container)
 
@@ -137,7 +142,7 @@ class LiquidacionGranosWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMix
             "denominacion": self.denominacion_var.get().strip(),
             "cuit_representado": self._optional_value(self.cuit_repr_var.get()),
             "minio_upload": True,
-            "proxy_request": False,
+            "proxy_request": bool(self.proxy_var.get()),
         }
         url = ensure_trailing_slash(base_url) + "api/v1/liquidacion_granos/consulta"
         self.clear_logs()
@@ -189,13 +194,14 @@ class LiquidacionGranosWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMix
 
         default_desde = format_date_str(self.desde_var.get().strip())
         default_hasta = format_date_str(self.hasta_var.get().strip())
+        default_proxy = bool(self.proxy_var.get())
 
         df_copy = df_to_process.copy()
         self.clear_logs()
         self.log_start("Liquidacion Granos", {"modo": "masivo", "filas": len(df_copy)})
-        self.run_in_thread(self._worker_excel, df_copy, url, headers, default_desde, default_hasta)
+        self.run_in_thread(self._worker_excel, df_copy, url, headers, default_desde, default_hasta, default_proxy)
 
-    def _worker_excel(self, df, url, headers, default_desde, default_hasta):
+    def _worker_excel(self, df, url, headers, default_desde, default_hasta, default_proxy):
         rows: List[Dict[str, Any]] = []
         total = len(df)
         self.set_progress(0, total)
@@ -213,6 +219,7 @@ class LiquidacionGranosWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMix
                     headers,
                     default_desde,
                     default_hasta,
+                    default_proxy,
                 ): idx
                 for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
@@ -238,7 +245,7 @@ class LiquidacionGranosWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMix
         self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))
         self.log_info("Procesamiento masivo finalizado.")
 
-    def _process_row_granos(self, row, url, headers, default_desde, default_hasta):
+    def _process_row_granos(self, row, url, headers, default_desde, default_hasta, default_proxy):
         if self._abort_event.is_set():
             return None
 
@@ -246,6 +253,9 @@ class LiquidacionGranosWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMix
         cuit_repr = self._optional_value(row.get("cuit_representado") or row.get("representado_cuit"))
         desde = format_date_str(row.get("desde", "")) or default_desde
         hasta = format_date_str(row.get("hasta", "")) or default_hasta
+        proxy_request = None
+        if "proxy_request" in row.index:
+            proxy_request = parse_bool_cell(row.get("proxy_request"), default=default_proxy)
         row_download = str(row.get("ubicacion_descarga") or row.get("path_descarga") or row.get("carpeta_descarga") or "").strip()
 
         payload = {
@@ -256,8 +266,9 @@ class LiquidacionGranosWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMix
             "denominacion": str(row.get("denominacion", "")).strip(),
             "cuit_representado": cuit_repr,
             "minio_upload": True,
-            "proxy_request": False,
         }
+        if proxy_request is not None:
+            payload["proxy_request"] = proxy_request
         self.log_separator(cuit_repr or cuit_rep or "sin_cuit")
         safe_payload = self._redact(payload)
 

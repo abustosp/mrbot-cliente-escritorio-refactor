@@ -466,12 +466,16 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
                 "name": str(row.get("nombre_ddjj") or row.get("nombre_presentacion_ddjj") or ""),
             },
         }
+        proxy_request = None
+        if "proxy_request" in row.index:
+            proxy_request = parse_bool_cell(row.get("proxy_request"), default=defaults["proxy"])
         payload = {
             "cuit_login": str(row.get("cuit_login", "")).strip(),
             "clave": str(row.get("clave", "")),
             "cuit_representado": str(row.get("cuit_representado", "")).strip(),
-            "proxy_request": defaults["proxy"],
         }
+        if proxy_request is not None:
+            payload["proxy_request"] = proxy_request
         payload.update(outputs)
         self.log_separator(payload["cuit_representado"])
         self.log_info(f"Bloques activos -> deuda={include_deuda}, vencimientos={include_venc}, ddjj={include_ddjj}")

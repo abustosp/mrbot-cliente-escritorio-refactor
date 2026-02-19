@@ -49,6 +49,19 @@ def _normalizar_si_no(valor: Any) -> str:
             return "si"
     return "no"
 
+
+def _parse_bool(valor: Any, default: bool = False) -> bool:
+    if isinstance(valor, bool):
+        return valor
+    if valor is None:
+        return default
+    texto = str(valor).strip().lower()
+    if texto in {"si", "sí", "s", "yes", "y", "true", "1"}:
+        return True
+    if texto in {"no", "n", "false", "0"}:
+        return False
+    return default
+
 def procesar_descarga_mc(
     row: pd.Series,
     log_fn: Optional[Callable[[str], None]] = None
@@ -77,6 +90,9 @@ def procesar_descarga_mc(
 
     descargar_emitidos = (descarga_MC_emitidos == 'si')
     descargar_recibidos = (descarga_MC_recibidos == 'si')
+    proxy_request: Optional[bool] = None
+    if "proxy_request_mc" in row.index or "proxy_request" in row.index:
+        proxy_request = _parse_bool(row.get('proxy_request_mc', row.get('proxy_request', '')), default=False)
 
     if not descargar_emitidos and not descargar_recibidos:
         _log_info(f"No hay tipos de comprobantes seleccionados para descargar (MC) para {cuit_representado}", log_fn)
@@ -96,6 +112,7 @@ def procesar_descarga_mc(
             descarga_recibidos=descargar_recibidos,
             carga_minio=True,
             carga_json=False,
+            proxy_request=proxy_request,
             log_fn=log_fn
         )
 
@@ -219,6 +236,9 @@ def procesar_descarga_rcel(
     hasta = format_date_str(row.get('hasta_rcel', ''))
 
     descarga_RCEL = _normalizar_si_no(row.get('descarga_rcel'))
+    proxy_request: Optional[bool] = None
+    if "proxy_request_rcel" in row.index or "proxy_request" in row.index:
+        proxy_request = _parse_bool(row.get('proxy_request_rcel', row.get('proxy_request', '')), default=False)
     ubicacion_base = str(row.get('ubicacion_descarga_rcel', '')).strip()
 
     if descarga_RCEL != 'si':
@@ -240,6 +260,8 @@ def procesar_descarga_rcel(
         "b64_pdf": False,
         "minio_upload": True,
     }
+    if proxy_request is not None:
+        payload["proxy_request"] = proxy_request
 
     try:
         # Log request (redacted)

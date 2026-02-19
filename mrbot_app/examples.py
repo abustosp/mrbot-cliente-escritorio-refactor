@@ -40,6 +40,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "nombre_emitidos": "emitidos-demo",
                     "ubicacion_recibidos": "/tmp/recibidos",
                     "nombre_recibidos": "recibidos-demo",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
                 {
@@ -56,6 +57,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "nombre_emitidos": "emitidos-no",
                     "ubicacion_recibidos": "/tmp/recibidos",
                     "nombre_recibidos": "recibidos-no",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
             ]
@@ -71,6 +73,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "desde": "01/01/2024",
                     "hasta": "31/12/2024",
                     "ubicacion_descarga": "./descargas/RCEL/20987654321",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
                 {
@@ -82,6 +85,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "desde": "01/01/2024",
                     "hasta": "31/12/2024",
                     "ubicacion_descarga": "./descargas/RCEL/20999999999",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
             ]
@@ -97,6 +101,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "desde": "01/01/2024",
                     "hasta": "31/12/2024",
                     "ubicacion_descarga": "./descargas/Hacienda/20987654321",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
                 {
@@ -108,6 +113,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "desde": "01/01/2024",
                     "hasta": "31/12/2024",
                     "ubicacion_descarga": "./descargas/Hacienda/20999999999",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
             ]
@@ -123,6 +129,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "desde": "01/01/2024",
                     "hasta": "31/12/2024",
                     "ubicacion_descarga": "./descargas/Liquidacion_Granos/20987654321",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
                 {
@@ -134,6 +141,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "desde": "01/01/2024",
                     "hasta": "31/12/2024",
                     "ubicacion_descarga": "./descargas/Liquidacion_Granos/20111111111",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
             ]
@@ -157,6 +165,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "nombre_vencimientos": "vencimientos-demo",
                     "ubicacion_ddjj": "./Descargas",
                     "nombre_ddjj": "ddjj-demo",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
                 {
@@ -176,6 +185,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "nombre_vencimientos": "vencimientos-no",
                     "ubicacion_ddjj": "./Descargas",
                     "nombre_ddjj": "ddjj-no",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
             ]
@@ -190,6 +200,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "movimientos": "SI",
                     "pdf": "SI",
                     "ubicacion_descarga": "./descargas/CCMA/20987654321",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
                 {
@@ -200,6 +211,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "movimientos": "NO",
                     "pdf": "NO",
                     "ubicacion_descarga": "./descargas/CCMA/20999999999",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
             ]
@@ -216,6 +228,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "hasta": "30/11/2025",
                     "impuestos": "216,217,219,353,767,787",
                     "ubicacion_descarga": "./descargas/Mis_Retenciones/30987654321",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
                 {
@@ -228,6 +241,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "hasta": "31/01/2024",
                     "impuestos": "",
                     "ubicacion_descarga": "./descargas/Mis_Retenciones/20999999999",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
             ]
@@ -243,6 +257,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "representado_nombre": "Empresa Ejemplo SA",
                     "jurisdicciones": "todas",
                     "ubicacion_descarga": "./descargas/SIFERE/20987654321",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
                 {
@@ -254,6 +269,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "representado_nombre": "Ejemplo NO",
                     "jurisdicciones": "901,902;903|904",
                     "ubicacion_descarga": "./descargas/SIFERE/20999999999",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
             ]
@@ -269,6 +285,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "periodo_desde": "202511",
                     "periodo_hasta": "202511",
                     "ubicacion_descarga": "./descargas/Declaracion_en_Linea/30987654321",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
                 {
@@ -280,6 +297,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "periodo_desde": "202401",
                     "periodo_hasta": "202412",
                     "ubicacion_descarga": "./descargas/Declaracion_en_Linea/20999999999",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
             ]
@@ -293,6 +311,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "cuit_representado": "30987654321",
                     "denominacion": "Empresa Ejemplo SA",
                     "ubicacion_descarga": "./descargas/Mis_Facilidades/30987654321",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
                 {
@@ -302,6 +321,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "cuit_representado": "20999999999",
                     "denominacion": "Ejemplo NO",
                     "ubicacion_descarga": "./descargas/Mis_Facilidades/20999999999",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
             ]
@@ -338,6 +358,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "clave": "tu_clave_fiscal",
                     "cuit_representado": "20123456789",
                     "ubicacion_descarga": "./descargas/Aportes_en_Linea/20123456789",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
                 {
@@ -346,6 +367,7 @@ def ensure_example_excels() -> Dict[str, str]:
                     "clave": "clave_no",
                     "cuit_representado": "20999999999",
                     "ubicacion_descarga": "./descargas/Aportes_en_Linea/20999999999",
+                    "proxy_request": "NO",
                     "retry": "0",
                 },
             ]
@@ -368,9 +390,11 @@ def ensure_example_excels() -> Dict[str, str]:
                     "Descarga_MC": "SI",
                     "Descarga_MC_emitidos": "SI",
                     "Descarga_MC_recibidos": "NO",
+                    "Proxy_Request_MC": "NO",
                     "Desde_MC": "01/01/2024",
                     "Hasta_MC": "31/12/2024",
                     "Descarga_RCEL": "SI",
+                    "Proxy_Request_RCEL": "NO",
                     "Desde_RCEL": "01/01/2024",
                     "Hasta_RCEL": "31/12/2024",
                     "Ubicacion_Descarga_MC": "",
@@ -385,9 +409,11 @@ def ensure_example_excels() -> Dict[str, str]:
                     "Descarga_MC": "NO",
                     "Descarga_MC_emitidos": "NO",
                     "Descarga_MC_recibidos": "NO",
+                    "Proxy_Request_MC": "NO",
                     "Desde_MC": "01/01/2024",
                     "Hasta_MC": "31/12/2024",
                     "Descarga_RCEL": "NO",
+                    "Proxy_Request_RCEL": "NO",
                     "Desde_RCEL": "01/01/2024",
                     "Hasta_RCEL": "31/12/2024",
                     "Ubicacion_Descarga_MC": "",
@@ -405,7 +431,21 @@ def ensure_example_excels() -> Dict[str, str]:
         paths[name] = path
         expected_cols = [c.strip().lower() for c in df.columns]
         should_write = not os.path.exists(path)
-        if not should_write and name in {"ccma.xlsx", "mis_retenciones.xlsx"}:
+        if not should_write and name in {
+            "mis_comprobantes.xlsx",
+            "rcel.xlsx",
+            "hacienda.xlsx",
+            "liquidacion_granos.xlsx",
+            "sct.xlsx",
+            "ccma.xlsx",
+            "mis_retenciones.xlsx",
+            "sifere.xlsx",
+            "declaracion_en_linea.xlsx",
+            "mis_facilidades.xlsx",
+            "pago_devoluciones.xlsx",
+            "aportes_en_linea.xlsx",
+            "control_monotributistas.xlsx",
+        }:
             try:
                 current_cols = [c.strip().lower() for c in pd.read_excel(path, nrows=0).columns]
                 if any(col not in current_cols for col in expected_cols):

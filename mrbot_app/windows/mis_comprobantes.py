@@ -15,6 +15,7 @@ from mrbot_app.helpers import (
     df_preview,
     ensure_trailing_slash,
     safe_get,
+    parse_bool_cell,
     format_date_str,
     get_unique_filename,
     unzip_and_rename
@@ -50,7 +51,7 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
             container,
             "Consulta individual o masiva (Excel). "
             "Admite columnas opcionales: procesar (SI/NO), desde, hasta, ubicacion_emitidos, nombre_emitidos, "
-            "ubicacion_recibidos, nombre_recibidos.",
+            "ubicacion_recibidos, nombre_recibidos y proxy_request.",
         )
 
         # Dates for Individual Query
@@ -80,11 +81,13 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
         self.recibidos_var = tk.BooleanVar(value=True)
         self.b64_var = tk.BooleanVar(value=False)
         self.minio_var = tk.BooleanVar(value=True)
+        self.proxy_var = tk.BooleanVar(value=False)
 
         ttk.Checkbutton(opts, text="Descarga Emitidos", variable=self.emitidos_var).grid(row=0, column=0, padx=4, pady=2, sticky="w")
         ttk.Checkbutton(opts, text="Descarga Recibidos", variable=self.recibidos_var).grid(row=0, column=1, padx=4, pady=2, sticky="w")
         ttk.Checkbutton(opts, text="Archivos en Base64", variable=self.b64_var).grid(row=0, column=2, padx=4, pady=2, sticky="w")
         ttk.Checkbutton(opts, text="Carga MinIO", variable=self.minio_var).grid(row=0, column=3, padx=4, pady=2, sticky="w")
+        ttk.Checkbutton(opts, text="proxy_request", variable=self.proxy_var).grid(row=0, column=4, padx=4, pady=2, sticky="w")
 
         # Download Path
         self.add_download_path_frame(container)
@@ -283,6 +286,7 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
         descarga_recibidos = self.recibidos_var.get()
         carga_minio = self.minio_var.get()
         b64 = self.b64_var.get()
+        proxy_request = self.proxy_var.get()
 
         target_dir = self.download_dir_var.get().strip()
 
@@ -299,11 +303,11 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
             cuit_repr or cuit_inicio or "sin_cuit",
             self._worker_individual,
             desde, hasta, cuit_inicio, nombre_repr, cuit_repr, clave,
-            descarga_emitidos, descarga_recibidos, carga_minio, b64, target_dir
+            descarga_emitidos, descarga_recibidos, carga_minio, b64, target_dir, proxy_request
         )
 
     def _worker_individual(self, desde, hasta, cuit_inicio, nombre_repr, cuit_repr, clave,
-                           d_emitidos, d_recibidos, minio, b64, target_dir):
+                           d_emitidos, d_recibidos, minio, b64, target_dir, proxy_request):
 
         self.log_separator(f"{nombre_repr} ({cuit_repr})")
 
@@ -321,7 +325,7 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
 
         response = consulta_mc(
             desde, hasta, cuit_inicio, nombre_repr, cuit_repr, clave,
-            d_emitidos, d_recibidos, carga_minio=minio, carga_json=False, b64=b64,
+            d_emitidos, d_recibidos, carga_minio=minio, carga_json=False, b64=b64, proxy_request=proxy_request,
             log_fn=self.log_message
         )
 
@@ -342,6 +346,7 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
         # Capture defaults from UI
         default_desde = self.desde_var.get().strip()
         default_hasta = self.hasta_var.get().strip()
+        default_proxy = bool(self.proxy_var.get())
 
         # Copy for thread safety
         df_copy = df_to_process.copy()
@@ -349,9 +354,9 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
         self.clear_logs()
         self.log_start("Mis Comprobantes", {"modo": "masivo", "filas": len(df_copy)})
 
-        self.run_in_thread(self._worker_excel, df_copy, default_desde, default_hasta)
+        self.run_in_thread(self._worker_excel, df_copy, default_desde, default_hasta, default_proxy)
 
-    def _worker_excel(self, df, default_desde, default_hasta):
+    def _worker_excel(self, df, default_desde, default_hasta, default_proxy):
         total = len(df)
         self.set_progress(0, total)
         max_workers = get_max_workers()
@@ -373,6 +378,7 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
                     row,
                     default_desde,
                     default_hasta,
+                    default_proxy,
                 ): idx
                 for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
@@ -394,7 +400,7 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
 
         self.log_info("Procesamiento masivo finalizado.")
 
-    def _process_row_mc(self, row, default_desde, default_hasta):
+    def _process_row_mc(self, row, default_desde, default_hasta, default_proxy):
         if self._abort_event.is_set():
             return
 
@@ -416,6 +422,9 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
 
         d_emitidos = _bool_val("descarga_emitidos", False)
         d_recibidos = _bool_val("descarga_recibidos", False)
+        proxy_request = None
+        if "proxy_request" in row.index:
+            proxy_request = parse_bool_cell(row.get("proxy_request"), default=default_proxy)
 
         # Paths specific
         row_download = str(row.get("ubicacion_descarga", "")).strip()
@@ -459,7 +468,7 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
 
             response = consulta_mc(
                 desde, hasta, cuit_inicio, nombre_repr, cuit_repr, clave,
-                d_emitidos, d_recibidos, carga_minio=True, carga_json=False, b64=False,
+                d_emitidos, d_recibidos, carga_minio=True, carga_json=False, b64=False, proxy_request=proxy_request,
                 log_fn=self.log_message
             )
 
