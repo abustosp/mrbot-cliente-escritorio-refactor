@@ -76,7 +76,34 @@ if [ -d "$temp_examples_path" ]; then
 fi
 
 if [ -f "$project_root/.env.example" ]; then
-  cp -f "$project_root/.env.example" "$dist_path/.env"
+  PROJECT_ROOT="$project_root" DIST_PATH="$dist_path" "$python_cmd" - <<'PY'
+import os
+from pathlib import Path
+
+project_root = Path(os.environ["PROJECT_ROOT"])
+dist_path = Path(os.environ["DIST_PATH"])
+source = project_root / ".env.example"
+target = dist_path / ".env"
+marker = "# omitir en .env del ejecutable"
+
+lines = source.read_text(encoding="utf-8").splitlines(keepends=True)
+
+cutoff = None
+for idx, line in enumerate(lines):
+    if line.strip() == marker:
+        cutoff = idx
+        break
+
+if cutoff is None:
+    filtered = lines
+else:
+    start = cutoff
+    if cutoff > 0 and lines[cutoff - 1].strip() == "######":
+        start = cutoff - 1
+    filtered = lines[:start]
+
+target.write_text("".join(filtered), encoding="utf-8")
+PY
 fi
 
 echo "Ejecutable creado en: $dist_path"

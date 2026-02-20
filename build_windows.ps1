@@ -98,9 +98,33 @@ if (Test-Path $tempExamplesPath) {
     Copy-Item (Join-Path $tempExamplesPath "*") (Join-Path $distPath "ejemplos_api") -Force -Recurse
 }
 
-# Copiar .env.example como .env
+# Copiar .env.example como .env, omitiendo el bloque marcado para ejecutable
 if (Test-Path ".\.env.example") {
-    Copy-Item ".\.env.example" (Join-Path $distPath ".env") -Force
+    $envLines = Get-Content ".\.env.example"
+    $markerIndex = -1
+
+    for ($i = 0; $i -lt $envLines.Count; $i++) {
+        if ($envLines[$i].Trim() -eq "# omitir en .env del ejecutable") {
+            $markerIndex = $i
+            break
+        }
+    }
+
+    if ($markerIndex -ge 0) {
+        $cutIndex = $markerIndex
+        if ($markerIndex -gt 0 -and $envLines[$markerIndex - 1].Trim() -eq "######") {
+            $cutIndex = $markerIndex - 1
+        }
+
+        if ($cutIndex -gt 0) {
+            $envLines = $envLines[0..($cutIndex - 1)]
+        }
+        else {
+            $envLines = @()
+        }
+    }
+
+    Set-Content -Path (Join-Path $distPath ".env") -Value $envLines -Encoding UTF8
 }
 
 Write-Host "Ejecutable creado en: $distPath" -ForegroundColor Green
