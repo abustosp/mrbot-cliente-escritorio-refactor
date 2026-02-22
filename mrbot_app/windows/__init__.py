@@ -14,6 +14,7 @@ from mrbot_app.windows.liquidacion_granos import LiquidacionGranosWindow
 from mrbot_app.windows.sifere import SifereWindow
 from mrbot_app.windows.sct import SctWindow
 from mrbot_app.windows.usuario import UsuarioWindow
+from mrbot_app.windows.webservices import WebservicesWindow
 from mrbot_app.windows.control_monotributistas import ControlMonotributistasWindow
 
 __all__ = [
@@ -33,5 +34,6 @@ __all__ = [
     "SifereWindow",
     "SctWindow",
     "UsuarioWindow",
+    "WebservicesWindow",
     "ControlMonotributistasWindow",
 ]

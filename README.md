@@ -1,6 +1,6 @@
 # Cliente API Mr Bot (Mis Comprobantes y módulos AFIP)
 
-Cliente Tkinter y librerías Python para usar los endpoints de api-bots.mrbot.com.ar (Mis Comprobantes, RCEL, SCT, CCMA, Apócrifos y Consulta CUIT). Incluye ejemplos de Excel, descargas desde MinIO y flujo masivo desde archivos.
+Cliente Tkinter y librerías Python para usar los endpoints de api-bots.mrbot.com.ar (Mis Comprobantes, RCEL, SCT, CCMA, Apócrifos y Consulta CUIT), más el módulo `Webservices` para generación automática de token/sign vía API de certificados y apertura directa de DFE/Facturación web.
 
 ## Contenido rápido
 - Qué necesitas
@@ -33,6 +33,19 @@ MAIL=tu_email@ejemplo.com
 API_KEY=tu_api_key
 ```
 
+Para Webservices (token/sign automático vía API de certificados):
+```env
+WSAA_TESTING=true
+WSAA_SERVICE=veconsumerws
+CERT_API_URL=https://api-certificados.mrbot.com.ar/
+CERT_API_EMAIL=tu_email_api_certificados
+CERT_API_KEY=tu_api_key_api_certificados
+CERT_API_CN=mrbot
+CERT_API_CUIT_REPRESENTANTE=20300111222
+AFIP_CERT_PATH=/ruta/certificado.crt
+AFIP_KEY_PATH=/ruta/llave_privada.key
+```
+
 Archivos de entrada:
 - `Descarga-Mis-Comprobantes.xlsx` o `.csv` (plantillas en la raíz).
 - Excels de ejemplo en `ejemplos_api/` (la GUI los genera si faltan).
@@ -45,6 +58,12 @@ Desde la GUI puedes:
 - Editar base URL, API key y mail.
 - Procesar Mis Comprobantes masivo (usa `mrbot_app.mis_comprobantes.consulta_mc_csv`).
 - Consultar RCEL, SCT, CCMA, Apócrifos y CUIT (individual/masivo según módulo).
+- Abrir `Webservices` y seleccionar servicio (`veconsumerws` o `wsfe`).
+- Generar token/sign desde `https://api-certificados.mrbot.com.ar/` (sin consumir API middleware de e-ventanilla).
+- Guardar el body del response en JSON con `Guardar token y sign` en `descargas/webservices/{servicio}/{cuit}/`.
+- Abrir la web del servicio con `Abrir servicio web`:
+  - `veconsumerws` -> `https://e-ventanilla.mrbot.com.ar/`
+  - `wsfe` -> `https://facturador-web.mrbot.com.ar/`
 - Previsualizar Excels y descargar archivos desde MinIO.
 
 ## Uso programático
@@ -88,7 +107,8 @@ resultados = descargar_archivos_minio_concurrente(archivos, max_workers=10)
 │   ├── consulta.py          # Descargas MinIO y requests restantes
 │   ├── helpers.py
 │   ├── mis_comprobantes.py  # Lógica Mis Comprobantes (consulta y CSV masivo)
-│   └── windows/             # mis_comprobantes, rcel, sct, ccma, apocrifos, consulta_cuit
+│   ├── wsaa.py              # Obtención token/sign (veconsumerws/wsfe) vía api-certificados
+│   └── windows/             # mis_comprobantes, rcel, sct, ccma, apocrifos, consulta_cuit, webservices (token/sign)
 ├── ejemplos_api/            # Excels de ejemplo (autogenerables)
 ├── Descarga-Mis-Comprobantes.{csv,xlsx}
 ├── tests/                   # Tests existentes (reubicados)
@@ -105,6 +125,12 @@ resultados = descargar_archivos_minio_concurrente(archivos, max_workers=10)
 - Apócrifos: `GET /api/v1/apoc/consulta/{cuit}`
 - Consulta CUIT: `POST /api/v1/consulta_cuit/{individual|masivo}`
 - Requests restantes: `GET /api/v1/user/consultas/{email}`
+- Webservices:
+  - Token/sign automático: `POST https://api-certificados.mrbot.com.ar/api/v1/token_sign/`
+  - Servicios soportados por GUI: `veconsumerws` (DFE) y `wsfe` (Facturación)
+  - Apertura web directa por servicio:
+    - `https://e-ventanilla.mrbot.com.ar/`
+    - `https://facturador-web.mrbot.com.ar/`
 
 Helpers reutilizables: `mrbot_app/helpers.py` (safe_get/safe_post, previews de DataFrame, parseo de booleanos, etc.).
 

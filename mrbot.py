@@ -22,6 +22,7 @@ from mrbot_app.windows import (
     MisRetencionesWindow,
     SifereWindow,
     SctWindow,
+    WebservicesWindow,
     ControlMonotributistasWindow,
     UsuarioWindow,
 )
@@ -70,7 +71,7 @@ class MainMenu(tk.Tk):
         self.config_pane = ConfigPane(self)
         self.config_pane.pack(fill="x", padx=10, pady=6)
 
-        btn_width = 24
+        btn_width = 28
 
         btns = ttk.Frame(self, padding=10)
         btns.pack(fill="both", expand=True)
@@ -131,6 +132,12 @@ class MainMenu(tk.Tk):
         ttk.Button(btns, text="Consulta de CUIT", width=btn_width, command=self.open_cuit).grid(
             row=5, column=1, padx=6, pady=4, sticky="nsew"
         )
+        ttk.Button(
+            btns,
+            text="Webservices",
+            width=btn_width,
+            command=self.open_webservices,
+        ).grid(row=5, column=2, padx=6, pady=4, sticky="nsew")
 
         ttk.Button(btns, text="Control Monotributistas", width=btn_width, command=self.open_control_monotributistas).grid(
             row=6, column=0, columnspan=3, padx=6, pady=4, sticky="nsew"
@@ -151,7 +158,22 @@ class MainMenu(tk.Tk):
         if not os.path.exists(env_path):
             try:
                 with open(env_path, "w", encoding="utf-8") as fh:
-                    fh.write("# URL=https://api-bots.mrbot.com.ar/\n# API_KEY=\n# MAIL=\n")
+                    fh.write(
+                        "# URL=https://api-bots.mrbot.com.ar/\n"
+                        "# API_KEY=\n"
+                        "# MAIL=\n"
+                        "# WSAA_TESTING=true\n"
+                        "# WSAA_SERVICE opciones: veconsumerws | wsfe\n"
+                        "# WSAA_SERVICE=veconsumerws\n"
+                        "# CERT_API_URL=https://api-certificados.mrbot.com.ar/\n"
+                        "# CERT_API_EMAIL=\n"
+                        "# CERT_API_KEY=\n"
+                        "# CERT_API_CN=mrbot\n"
+                        "# CERT_API_CUIT_REPRESENTANTE=\n"
+                        "# AFIP_CERT_PATH=\n"
+                        "# AFIP_KEY_PATH=\n"
+                        "# AFIP_CERT_DIR=\n"
+                    )
             except Exception as exc:
                 messagebox.showerror("Error", f"No se pudo crear {env_path}: {exc}")
                 return
@@ -212,6 +234,9 @@ class MainMenu(tk.Tk):
 
     def open_bcra(self) -> None:
         BcraWindow(self, self.example_paths)
+
+    def open_webservices(self) -> None:
+        WebservicesWindow(self, self.current_config, self.example_paths)
 
     def open_usuario(self) -> None:
         UsuarioWindow(self, self.current_config)
