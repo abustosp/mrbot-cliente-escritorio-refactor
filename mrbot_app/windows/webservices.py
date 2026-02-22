@@ -200,6 +200,32 @@ class WebservicesWindow(BaseWindow):
         sign = str(data.get("sign") or "").strip()
         return bool(token and sign)
 
+    def on_env_reloaded(self) -> None:
+        cert_api_url = os.getenv("CERT_API_URL", "https://api-certificados.mrbot.com.ar/").strip()
+        cert_api_email = os.getenv("CERT_API_EMAIL", "").strip()
+        cert_api_key = os.getenv("CERT_API_KEY", "").strip()
+        cert_api_cn = (os.getenv("CERT_API_CN", "mrbot") or "mrbot").strip()
+        default_cuit_rep = os.getenv("CERT_API_CUIT_REPRESENTANTE", "").strip()
+        wsaa_testing = bool(parse_bool_cell(os.getenv("WSAA_TESTING", "false"), default=False))
+        cert_path = os.getenv("AFIP_CERT_PATH", "").strip()
+        key_path = os.getenv("AFIP_KEY_PATH", "").strip()
+
+        env_service = str(os.getenv("WSAA_SERVICE", DEFAULT_WSAA_SERVICE or "veconsumerws") or "").strip().lower()
+        service_id = env_service if env_service in self._service_id_to_label else "veconsumerws"
+        self.default_service_id = service_id
+
+        self.cert_api_url_var.set(cert_api_url)
+        self.cert_api_email_var.set(cert_api_email)
+        self.cert_api_key_var.set(cert_api_key)
+        self.cert_api_cn_var.set(cert_api_cn)
+        self.cuit_representante_var.set(default_cuit_rep)
+        self.cuit_var.set(default_cuit_rep)
+        self.testing_var.set(wsaa_testing)
+        self.cert_path_var.set(cert_path)
+        self.key_path_var.set(key_path)
+        self.service_label_var.set(self._service_id_to_label[service_id])
+        self.log_info("Variables de entorno recargadas desde .env.")
+
     def _persist_last_token_sign_json(self) -> Dict[str, Any]:
         if not isinstance(self.last_token_sign_response, dict):
             return {

@@ -51,6 +51,13 @@ class BaseWindow(tk.Toplevel):
             return self.config_provider()
         return DEFAULT_BASE_URL, DEFAULT_API_KEY, DEFAULT_EMAIL
 
+    def on_env_reloaded(self) -> None:
+        """
+        Hook opcional para ventanas que mantienen valores precargados
+        desde variables de entorno.
+        """
+        return
+
     def add_section_label(self, parent, text: str) -> None:
         lbl = ttk.Label(parent, text=text, foreground=FG, background=BG, font=("Arial", 11, "bold"))
         lbl.pack(anchor="w", pady=(8, 2))

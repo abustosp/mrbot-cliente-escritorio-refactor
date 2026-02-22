@@ -182,9 +182,26 @@ class MainMenu(tk.Tk):
 
     def reload_env_values(self) -> None:
         base_url, api_key, email = self.config_pane.load_from_env()
+        refreshed_windows = 0
+        for widget in self.winfo_children():
+            callback = getattr(widget, "on_env_reloaded", None)
+            if callable(callback):
+                try:
+                    callback()
+                    refreshed_windows += 1
+                except Exception as exc:
+                    messagebox.showwarning(
+                        "Recargar .env",
+                        f"No se pudo refrescar una ventana abierta: {exc}",
+                    )
+
         messagebox.showinfo(
             "Configuración recargada",
-            f"Se recargaron valores de {os.path.abspath(ENV_FILE)}.\n\nURL: {base_url}\nMail: {email}\n(API_KEY oculto)",
+            (
+                f"Se recargaron valores de {os.path.abspath(ENV_FILE)}.\n\n"
+                f"URL: {base_url}\nMail: {email}\n(API_KEY oculto)\n"
+                f"Ventanas refrescadas: {refreshed_windows}"
+            ),
         )
 
     def open_mis_comprobantes(self) -> None:
