@@ -1,5 +1,6 @@
 from mrbot_app.windows.apocrifos import ApocrifosWindow
 from mrbot_app.windows.aportes_en_linea import AportesEnLineaWindow
+from mrbot_app.windows.bcra import BcraWindow
 from mrbot_app.windows.ccma import CcmaWindow
 from mrbot_app.windows.consulta_cuit import ConsultaCuitWindow
 from mrbot_app.windows.declaracion_en_linea import DeclaracionEnLineaWindow
@@ -18,6 +19,7 @@ from mrbot_app.windows.control_monotributistas import ControlMonotributistasWind
 __all__ = [
     "ApocrifosWindow",
     "AportesEnLineaWindow",
+    "BcraWindow",
     "CcmaWindow",
     "ConsultaCuitWindow",
     "DeclaracionEnLineaWindow",

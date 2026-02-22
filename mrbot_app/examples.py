@@ -379,6 +379,67 @@ def ensure_example_excels() -> Dict[str, str]:
             ]
         ),
         "consulta_cuit.xlsx": pd.DataFrame([{"cuit": "20333444555"}, {"cuit": "20987654321"}]),
+        "bcra_central_deudores.xlsx": pd.DataFrame(
+            [
+                {"procesar": "SI", "consulta": "central_deudores_deudas", "identificacion": "20374730429"},
+                {"procesar": "SI", "consulta": "central_deudores_historicas", "identificacion": "20374730429"},
+                {"procesar": "SI", "consulta": "central_deudores_cheques_rechazados", "identificacion": "20374730429"},
+            ]
+        ),
+        "bcra_cheques_denunciados.xlsx": pd.DataFrame(
+            [
+                {"procesar": "SI", "consulta": "cheques_entidades"},
+                {"procesar": "SI", "consulta": "cheques_denunciados", "codigo_entidad": "17", "numero_cheque": "1"},
+                {"procesar": "SI", "consulta": "cheques_denunciados", "codigo_entidad": "17", "numero_cheque": "999999999"},
+            ]
+        ),
+        "bcra_estadisticas_cambiarias.xlsx": pd.DataFrame(
+            [
+                {"procesar": "SI", "consulta": "cambiarias_divisas"},
+                {"procesar": "SI", "consulta": "cambiarias_cotizaciones"},
+                {"procesar": "SI", "consulta": "cambiarias_cotizaciones", "fecha": "2026-02-20"},
+                {"procesar": "SI", "consulta": "cambiarias_cotizacion_moneda", "cod_moneda": "USD"},
+                {
+                    "procesar": "SI",
+                    "consulta": "cambiarias_cotizacion_moneda",
+                    "cod_moneda": "USD",
+                    "fecha_desde": "2026-02-01",
+                    "fecha_hasta": "2026-02-20",
+                    "limit": "10",
+                    "offset": "0",
+                },
+            ]
+        ),
+        "bcra_estadisticas_monetarias.xlsx": pd.DataFrame(
+            [
+                {"procesar": "SI", "consulta": "monetarias_metodologia"},
+                {"procesar": "SI", "consulta": "monetarias_metodologia", "limit": "10", "offset": "0"},
+                {"procesar": "SI", "consulta": "monetarias_metodologia_variable", "id_variable": "1"},
+                {"procesar": "SI", "consulta": "monetarias_monetarias"},
+                {
+                    "procesar": "SI",
+                    "consulta": "monetarias_monetarias",
+                    "id_variable": "1",
+                    "categoria": "Principales Variables",
+                    "periodicidad": "D",
+                    "moneda": "ME",
+                    "tipo_serie": "Saldos",
+                    "unidad_expresion": "En millones de USD",
+                    "limit": "10",
+                    "offset": "0",
+                },
+                {"procesar": "SI", "consulta": "monetarias_variable", "id_variable": "1"},
+                {
+                    "procesar": "SI",
+                    "consulta": "monetarias_variable",
+                    "id_variable": "1",
+                    "desde": "2026-01-01",
+                    "hasta": "2026-02-20",
+                    "limit": "10",
+                    "offset": "0",
+                },
+            ]
+        ),
         "control_monotributistas.xlsx": pd.DataFrame(
             [
                 {
@@ -445,11 +506,23 @@ def ensure_example_excels() -> Dict[str, str]:
             "pago_devoluciones.xlsx",
             "aportes_en_linea.xlsx",
             "control_monotributistas.xlsx",
+            "bcra_central_deudores.xlsx",
+            "bcra_cheques_denunciados.xlsx",
+            "bcra_estadisticas_cambiarias.xlsx",
+            "bcra_estadisticas_monetarias.xlsx",
         }:
             try:
-                current_cols = [c.strip().lower() for c in pd.read_excel(path, nrows=0).columns]
+                current_df = pd.read_excel(path, dtype=str).fillna("")
+                current_cols = [c.strip().lower() for c in current_df.columns]
                 if any(col not in current_cols for col in expected_cols):
                     should_write = True
+                if name.startswith("bcra_"):
+                    expected_df = df.fillna("").astype(str)
+                    aligned_current = current_df.reindex(columns=df.columns, fill_value="").fillna("").astype(str)
+                    if len(aligned_current) != len(expected_df):
+                        should_write = True
+                    elif not aligned_current.reset_index(drop=True).equals(expected_df.reset_index(drop=True)):
+                        should_write = True
             except Exception:
                 should_write = True
 
