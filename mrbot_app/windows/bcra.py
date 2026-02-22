@@ -216,11 +216,17 @@ class BcraWindow(BaseWindow):
         self.set_preview(self.preview, "Vista previa del Excel (filas con procesar=SI).")
 
         self.progress_frame = self.add_progress_bar(container, label="Progreso")
+        self.log_text = self.add_collapsible_log(container, title="Logs de ejecución", height=12, service="bcra")
         self._on_operation_changed()
 
     def _selected_operation(self) -> str:
         label = self.operation_var.get().strip()
         return self._label_to_id.get(label, "")
+
+    def clear_logs(self) -> None:
+        self.log_text.configure(state="normal")
+        self.log_text.delete("1.0", tk.END)
+        self.log_text.configure(state="disabled")
 
     def _normalize_operation_from_row(self, value: Any) -> Optional[str]:
         if value is None:
@@ -299,9 +305,11 @@ class BcraWindow(BaseWindow):
 
     def _run_central_queries(self, identificacion: str, base_url: str) -> Dict[str, Dict[str, Any]]:
         query_results: Dict[str, Dict[str, Any]] = {}
+        self.log_info(f"Consultando Central de Deudores para identificacion={identificacion}")
         for operation in CENTRAL_DEUDORES_OPS:
             try:
-                response = run_bcra_operation(
+                self.log_info(f"Operacion: {operation}")
+                response = self._run_operation_logged(
                     operation=operation,
                     params={"identificacion": identificacion},
                     base_url=base_url,
@@ -316,6 +324,7 @@ class BcraWindow(BaseWindow):
                     "error": "; ".join(errors) if errors else None,
                 }
             except Exception as exc:
+                self.log_error(f"Error en {operation}: {exc}")
                 query_results[operation] = {
                     "response": {"http_status": None, "data": {"status": None}},
                     "data": {"status": None},
@@ -473,56 +482,62 @@ class BcraWindow(BaseWindow):
         detail_rows: List[Dict[str, Any]] = []
 
         for idx, (_, row) in enumerate(df.iterrows(), start=1):
+            if self._abort_event.is_set():
+                break
             identificacion = self._extract_identificacion_from_row(row)
-            if not identificacion:
-                summary_rows.append(
-                    {
-                        "fila": idx,
-                        "identificacion": None,
-                        "operacion": "central_deudores",
-                        "http_status": None,
-                        "status": None,
-                        "registros": 0,
-                        "error": "Falta identificacion (columnas esperadas: identificacion/cuit/cuil/cdi).",
-                        "reporte_individual": None,
-                    }
-                )
-                self.set_progress(idx, total)
-                continue
+            with self.log_block(identificacion or f"fila_{idx}"):
+                if not identificacion:
+                    self.log_error("Falta identificacion (columnas esperadas: identificacion/cuit/cuil/cdi).")
+                    summary_rows.append(
+                        {
+                            "fila": idx,
+                            "identificacion": None,
+                            "operacion": "central_deudores",
+                            "http_status": None,
+                            "status": None,
+                            "registros": 0,
+                            "error": "Falta identificacion (columnas esperadas: identificacion/cuit/cuil/cdi).",
+                            "reporte_individual": None,
+                        }
+                    )
+                    self.set_progress(idx, total)
+                    continue
 
-            query_results = self._run_central_queries(identificacion, base_url)
-            report_path: Optional[str] = None
-            try:
-                report_path, _, _ = self._write_central_individual_report(identificacion, query_results)
-            except Exception as exc:
-                summary_rows.append(
-                    {
-                        "fila": idx,
-                        "identificacion": identificacion,
-                        "operacion": "reporte_individual",
-                        "http_status": None,
-                        "status": None,
-                        "registros": 0,
-                        "error": f"No se pudo guardar reporte individual: {exc}",
-                        "reporte_individual": None,
-                    }
-                )
+                query_results = self._run_central_queries(identificacion, base_url)
+                report_path: Optional[str] = None
+                try:
+                    report_path, _, _ = self._write_central_individual_report(identificacion, query_results)
+                    self.log_info(f"Reporte individual generado: {report_path}")
+                except Exception as exc:
+                    self.log_error(f"No se pudo guardar reporte individual: {exc}")
+                    summary_rows.append(
+                        {
+                            "fila": idx,
+                            "identificacion": identificacion,
+                            "operacion": "reporte_individual",
+                            "http_status": None,
+                            "status": None,
+                            "registros": 0,
+                            "error": f"No se pudo guardar reporte individual: {exc}",
+                            "reporte_individual": None,
+                        }
+                    )
 
-            summary_rows.extend(
-                self._build_central_summary_rows(
-                    identificacion=identificacion,
-                    query_results=query_results,
-                    row_number=idx,
-                    report_path=report_path,
+                summary_rows.extend(
+                    self._build_central_summary_rows(
+                        identificacion=identificacion,
+                        query_results=query_results,
+                        row_number=idx,
+                        report_path=report_path,
+                    )
                 )
-            )
-            detail_rows.extend(
-                self._build_central_detail_rows(
-                    identificacion=identificacion,
-                    query_results=query_results,
-                    row_number=idx,
+                detail_rows.extend(
+                    self._build_central_detail_rows(
+                        identificacion=identificacion,
+                        query_results=query_results,
+                        row_number=idx,
+                    )
                 )
-            )
             self.set_progress(idx, total)
 
         summary_df = pd.DataFrame(summary_rows)
@@ -531,8 +546,9 @@ class BcraWindow(BaseWindow):
         consolidated_path: Optional[str] = None
         try:
             consolidated_path = self._write_central_consolidated_report(summary_df, detail_df)
+            self.log_info(f"Reporte consolidado generado: {consolidated_path}")
         except Exception as exc:
-            messagebox.showerror("Error", f"No se pudo guardar el reporte consolidado: {exc}")
+            self.log_error(f"No se pudo guardar el reporte consolidado: {exc}")
 
         parts: List[str] = []
         if consolidated_path:
@@ -557,6 +573,29 @@ class BcraWindow(BaseWindow):
             if value:
                 params[key] = value
         return params
+
+    def _run_operation_logged(self, operation: str, params: Dict[str, Any], base_url: str) -> Dict[str, Any]:
+        request_payload = {
+            "operation": operation,
+            "params": params,
+            "base_url": base_url,
+        }
+        self.log_request_started(request_payload, label="REQUEST BCRA")
+        response = run_bcra_operation(
+            operation=operation,
+            params=params,
+            base_url=base_url,
+        )
+        self.log_response_finished(response.get("http_status"), response.get("data"))
+        if response.get("date_adjustment_warning"):
+            self.log_info(str(response.get("date_adjustment_warning")))
+        if response.get("lookup_ssl_warning"):
+            self.log_info(str(response.get("lookup_ssl_warning")))
+        data = response.get("data")
+        errors = extract_bcra_error_messages(data)
+        if errors:
+            self.log_error("; ".join(errors))
+        return response
 
     def _extract_result_text(self, response: Dict[str, Any]) -> str:
         data = response.get("data")
@@ -642,11 +681,31 @@ class BcraWindow(BaseWindow):
             if not identificacion:
                 messagebox.showerror("Error", "Para Central de Deudores debes ingresar 'identificacion'.")
                 return
+            block_label = identificacion
+        else:
+            block_label = operation
+
+        self.clear_logs()
+        self.log_start("BCRA", {"modo": "individual", "operacion": operation})
+        self.run_in_thread(
+            self.run_with_log_block,
+            block_label,
+            self._worker_consulta_individual,
+            operation,
+            params,
+            base_url,
+        )
+
+    def _worker_consulta_individual(self, operation: str, params: Dict[str, Any], base_url: str) -> None:
+        if self._is_central_operation(operation):
+            identificacion = str(params.get("identificacion", "")).strip()
             query_results = self._run_central_queries(identificacion, base_url)
             try:
                 report_path, summary_df, detail_df = self._write_central_individual_report(identificacion, query_results)
+                self.log_info(f"Reporte individual generado: {report_path}")
             except Exception as exc:
-                messagebox.showerror("Error", f"No se pudo generar el reporte individual: {exc}")
+                self.log_error(f"No se pudo generar el reporte individual: {exc}")
+                self.set_preview(self.result_box, f"No se pudo generar el reporte individual: {exc}")
                 return
 
             parts = [
@@ -661,13 +720,14 @@ class BcraWindow(BaseWindow):
             return
 
         try:
-            response = run_bcra_operation(
+            response = self._run_operation_logged(
                 operation=operation,
                 params=params,
                 base_url=base_url,
             )
         except Exception as exc:
-            messagebox.showerror("Error", str(exc))
+            self.log_error(str(exc))
+            self.set_preview(self.result_box, str(exc))
             return
 
         self.set_preview(self.result_box, self._extract_result_text(response))
@@ -704,8 +764,18 @@ class BcraWindow(BaseWindow):
             messagebox.showwarning("Sin filas a procesar", "No hay filas marcadas con procesar=SI.")
             return
 
+        df_copy = df.copy()
+        self.clear_logs()
+        self.log_start(
+            "BCRA",
+            {"modo": "masivo", "filas": len(df_copy), "operacion": selected_operation},
+        )
+        self.run_in_thread(self._worker_procesar_excel, df_copy, selected_operation, base_url)
+
+    def _worker_procesar_excel(self, df: pd.DataFrame, selected_operation: str, base_url: str) -> None:
         if self._is_central_operation(selected_operation):
             self._procesar_excel_central_deudores(df, base_url)
+            self.log_info("Procesamiento masivo finalizado.")
             return
 
         summary_rows: List[Dict[str, Any]] = []
@@ -715,10 +785,39 @@ class BcraWindow(BaseWindow):
         self.set_progress(0, total)
 
         for idx, (_, row) in enumerate(df.iterrows(), start=1):
-            operation_value = row.get("consulta", "") or row.get("operacion", "")
-            operation = self._normalize_operation_from_row(operation_value)
-            if not operation:
-                if str(operation_value).strip():
+            if self._abort_event.is_set():
+                break
+
+            row_label = (
+                str(row.get("identificacion", "")).strip()
+                or str(row.get("cuit", "")).strip()
+                or str(row.get("codigo_entidad", "")).strip()
+                or str(row.get("id_variable", "")).strip()
+                or f"fila_{idx}"
+            )
+
+            with self.log_block(row_label):
+                operation_value = row.get("consulta", "") or row.get("operacion", "")
+                operation = self._normalize_operation_from_row(operation_value)
+                if not operation:
+                    if str(operation_value).strip():
+                        self.log_error(f"Operacion no soportada: {operation_value}")
+                        summary_rows.append(
+                            {
+                                "fila": idx,
+                                "operacion": str(operation_value),
+                                "http_status": None,
+                                "status": None,
+                                "registros": 0,
+                                "error": f"Operacion no soportada: {operation_value}",
+                            }
+                        )
+                        self.set_progress(idx, total)
+                        continue
+                    operation = selected_operation
+
+                if operation not in BCRA_OPERATIONS:
+                    self.log_error(f"Operacion no soportada: {operation_value}")
                     summary_rows.append(
                         {
                             "fila": idx,
@@ -731,62 +830,49 @@ class BcraWindow(BaseWindow):
                     )
                     self.set_progress(idx, total)
                     continue
-                operation = selected_operation
 
-            if operation not in BCRA_OPERATIONS:
-                summary_rows.append(
-                    {
-                        "fila": idx,
-                        "operacion": str(operation_value),
-                        "http_status": None,
-                        "status": None,
-                        "registros": 0,
-                        "error": f"Operacion no soportada: {operation_value}",
-                    }
-                )
-                self.set_progress(idx, total)
-                continue
+                params = self._row_params(row)
+                self.log_info(f"Fila {idx} - operacion {operation}")
+                try:
+                    response = self._run_operation_logged(
+                        operation=operation,
+                        params=params,
+                        base_url=base_url,
+                    )
+                    data = response.get("data", {})
+                    flattened = flatten_bcra_results(operation, data)
+                    errors = extract_bcra_error_messages(data)
+                    summary_rows.append(
+                        {
+                            "fila": idx,
+                            "operacion": operation,
+                            "http_status": response.get("http_status"),
+                            "status": data.get("status") if isinstance(data, dict) else None,
+                            "registros": len(flattened),
+                            "error": "; ".join(errors) if errors else None,
+                        }
+                    )
 
-            params = self._row_params(row)
-            try:
-                response = run_bcra_operation(
-                    operation=operation,
-                    params=params,
-                    base_url=base_url,
-                )
-                data = response.get("data", {})
-                flattened = flatten_bcra_results(operation, data)
-                errors = extract_bcra_error_messages(data)
-                summary_rows.append(
-                    {
-                        "fila": idx,
-                        "operacion": operation,
-                        "http_status": response.get("http_status"),
-                        "status": data.get("status") if isinstance(data, dict) else None,
-                        "registros": len(flattened),
-                        "error": "; ".join(errors) if errors else None,
-                    }
-                )
-
-                for detail in flattened:
-                    item = {
-                        "fila": idx,
-                        "operacion": operation,
-                    }
-                    if isinstance(detail, dict):
-                        item.update(detail)
-                    detail_rows.append(item)
-            except Exception as exc:
-                summary_rows.append(
-                    {
-                        "fila": idx,
-                        "operacion": operation,
-                        "http_status": None,
-                        "status": None,
-                        "registros": 0,
-                        "error": str(exc),
-                    }
-                )
+                    for detail in flattened:
+                        item = {
+                            "fila": idx,
+                            "operacion": operation,
+                        }
+                        if isinstance(detail, dict):
+                            item.update(detail)
+                        detail_rows.append(item)
+                except Exception as exc:
+                    self.log_error(str(exc))
+                    summary_rows.append(
+                        {
+                            "fila": idx,
+                            "operacion": operation,
+                            "http_status": None,
+                            "status": None,
+                            "registros": 0,
+                            "error": str(exc),
+                        }
+                    )
 
             self.set_progress(idx, total)
 
@@ -799,3 +885,4 @@ class BcraWindow(BaseWindow):
             parts.append(df_preview(detail_df, rows=len(detail_df)))
 
         self.set_preview(self.result_box, "\n".join(parts))
+        self.log_info("Procesamiento masivo finalizado.")
