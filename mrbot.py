@@ -17,6 +17,7 @@ from mrbot_app.windows import (
     HaciendaWindow,
     LiquidacionGranosWindow,
     PagoDevolucionesWindow,
+    ProcesarPemWindow,
     MisFacilidadesWindow,
     RcelWindow,
     MisRetencionesWindow,
@@ -140,14 +141,20 @@ class MainMenu(tk.Tk):
         ).grid(row=5, column=2, padx=6, pady=4, sticky="nsew")
 
         ttk.Button(btns, text="Control Monotributistas", width=btn_width, command=self.open_control_monotributistas).grid(
-            row=6, column=0, columnspan=3, padx=6, pady=4, sticky="nsew"
-        )
-        ttk.Button(btns, text="Consultas BCRA", width=btn_width, command=self.open_bcra).grid(
             row=7, column=0, columnspan=3, padx=6, pady=4, sticky="nsew"
         )
+        ttk.Button(btns, text="Consultas BCRA", width=btn_width, command=self.open_bcra).grid(
+            row=8, column=0, columnspan=3, padx=6, pady=4, sticky="nsew"
+        )
+        ttk.Button(
+            btns,
+            text="Conversión PEM a Excel",
+            width=btn_width,
+            command=self.open_procesar_pem,
+        ).grid(row=6, column=1, padx=6, pady=4, sticky="nsew")
 
         btns.columnconfigure((0, 1, 2), weight=1, uniform="menu")
-        for r in range(8):
+        for r in range(9):
             btns.rowconfigure(r, weight=1)
 
     def current_config(self) -> tuple[str, str, str]:
@@ -254,6 +261,9 @@ class MainMenu(tk.Tk):
 
     def open_webservices(self) -> None:
         WebservicesWindow(self, self.current_config, self.example_paths)
+
+    def open_procesar_pem(self) -> None:
+        ProcesarPemWindow(self, self.current_config, self.example_paths)
 
     def open_usuario(self) -> None:
         UsuarioWindow(self, self.current_config)
