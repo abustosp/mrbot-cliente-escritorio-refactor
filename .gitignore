@@ -11,4 +11,8 @@ cambios
 .github
 logs*
 temp_build
-
+!.github/
+.github/*
+!.github/workflows/
+.github/workflows/*
+!.github/workflows/release-zips-on-tag.yml

@@ -10,6 +10,7 @@ Cliente Tkinter y librerías Python para usar los endpoints de api-bots.mrbot.co
 - Estructura del proyecto
 - Endpoints y módulos clave
 - Tests y soporte
+- Releases por tag (GitHub Actions)
 
 ## Qué necesitas
 - Python 3.8+
@@ -139,6 +140,28 @@ Helpers reutilizables: `mrbot_app/helpers.py` (safe_get/safe_post, previews de D
 python -m py_compile mrbot.py mrbot_app/*.py mrbot_app/windows/*.py
 # Tests (algunos requieren credenciales/Excels)
 pytest tests  # o python tests/test_sct_descarga.py
+```
+
+## Releases por tag (GitHub Actions)
+Al crear y pushear una tag, GitHub Actions compila el ejecutable para Linux y Windows, arma los ZIPs desde `./Ejecutable` y los publica en el release de esa misma tag.
+
+Formato de tag soportado:
+- `YYYYMMDD` (ejemplo: `20260223`)
+- `YYYYMMDD_HHMMSS` (ejemplo: `20260223_062352`)
+
+Nombres de ZIP generados:
+- `mrbot-refactored.<tag>.Linux.zip`
+- `mrbot-refactored.<tag>.Windows.zip`
+
+Comandos de ejemplo para publicar una versión:
+```bash
+# primera release del dia
+git tag 20260223
+git push origin 20260223
+
+# segunda release del dia (con hora)
+git tag 20260223_062352
+git push origin 20260223_062352
 ```
 
 ## Soporte, licencia y donaciones
