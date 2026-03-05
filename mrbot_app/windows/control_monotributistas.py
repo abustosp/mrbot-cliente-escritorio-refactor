@@ -82,6 +82,18 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
             return
         self.log_message(text)
 
+    def _row_block_label(self, row: pd.Series, idx: int) -> str:
+        cuit_representado = str(row.get("cuit_representado", "")).strip()
+        if cuit_representado:
+            return cuit_representado
+        denominacion = str(row.get("denominacion_mc", "") or row.get("denominacion_rcel", "")).strip()
+        if denominacion:
+            return denominacion
+        cuit_representante = str(row.get("cuit_representante", "")).strip()
+        if cuit_representante:
+            return cuit_representante
+        return f"fila_{idx}"
+
     def descargar_mc(self) -> None:
         if self.excel_df is None or self.excel_df.empty:
             messagebox.showwarning("Advertencia", "Primero debes seleccionar un archivo Excel")
@@ -100,7 +112,12 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
-                executor.submit(self._process_row_mc_control, row): idx
+                executor.submit(
+                    self.run_with_log_block,
+                    self._row_block_label(row, idx),
+                    self._process_row_mc_control,
+                    row,
+                ): idx
                 for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
 
@@ -145,7 +162,13 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
-                executor.submit(self._process_row_rcel_control, row, config): idx
+                executor.submit(
+                    self.run_with_log_block,
+                    self._row_block_label(row, idx),
+                    self._process_row_rcel_control,
+                    row,
+                    config,
+                ): idx
                 for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
 

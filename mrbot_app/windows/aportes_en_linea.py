@@ -90,6 +90,11 @@ class AportesEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         clean = (value or "").strip()
         return clean if clean else None
 
+    def _row_block_label(self, row: Any) -> str:
+        cuit_repr = self._optional_value(str(row.get("cuit_representado", "")))
+        cuit_login = str(row.get("cuit_login", "")).strip()
+        return cuit_repr or cuit_login or "sin_cuit"
+
     def _extract_links(self, data: Any) -> List[Dict[str, str]]:
         links: List[Dict[str, str]] = []
         if isinstance(data, dict):
@@ -168,7 +173,15 @@ class AportesEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
-                executor.submit(self._process_row_aportes, row, url, headers, default_proxy): idx
+                executor.submit(
+                    self.run_with_log_block,
+                    self._row_block_label(row),
+                    self._process_row_aportes,
+                    row,
+                    url,
+                    headers,
+                    default_proxy,
+                ): idx
                 for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
 
