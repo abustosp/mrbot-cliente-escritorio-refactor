@@ -565,21 +565,26 @@ def generar_reporte_control(
         if 'Hasta' in consolidado.columns:
              consolidado['Hasta'] = pd.to_datetime(consolidado['Hasta'], dayfirst=True, errors='coerce')
 
-        consolidado['Desde'] = consolidado['Desde'].fillna(consolidado['Fecha'])
-        consolidado['Hasta'] = consolidado['Hasta'].fillna(consolidado['Fecha'])
+        # For billing period length, fallback to invoice date if the JSON date range is missing.
+        desde_facturacion = consolidado['Desde'].fillna(consolidado['Fecha'])
+        hasta_facturacion = consolidado['Hasta'].fillna(consolidado['Fecha'])
 
         # Filter by dates? control.py has a commented out line for this. I'll skip.
 
         # Pro-rating
-        consolidado['Fecha Inicial'] = fecha_inicial
-        consolidado['Fecha_Inicial_max'] = consolidado[['Fecha Inicial', 'Desde']].max(axis=1)
-        del consolidado['Fecha Inicial']
+        consolidado['Fecha_Inicial_max'] = fecha_inicial
+        mask_desde = consolidado['Desde'].notna()
+        consolidado.loc[mask_desde, 'Fecha_Inicial_max'] = consolidado.loc[
+            mask_desde, ['Fecha_Inicial_max', 'Desde']
+        ].max(axis=1)
 
-        consolidado['Fecha Final'] = fecha_final
-        consolidado['Fecha_Final_min'] = consolidado[['Fecha Final', 'Hasta']].min(axis=1)
-        del consolidado['Fecha Final']
+        consolidado['Fecha_Final_min'] = fecha_final
+        mask_hasta = consolidado['Hasta'].notna()
+        consolidado.loc[mask_hasta, 'Fecha_Final_min'] = consolidado.loc[
+            mask_hasta, ['Fecha_Final_min', 'Hasta']
+        ].min(axis=1)
 
-        consolidado['Dias de facturación'] = (consolidado['Hasta'] - consolidado['Desde']).dt.days + 1
+        consolidado['Dias de facturación'] = (hasta_facturacion - desde_facturacion).dt.days + 1
         consolidado['Días Efectivos'] = (consolidado['Fecha_Final_min'] - consolidado['Fecha_Inicial_max']).dt.days + 1
         consolidado.loc[consolidado['Días Efectivos'] < 0, 'Días Efectivos'] = 0
 
