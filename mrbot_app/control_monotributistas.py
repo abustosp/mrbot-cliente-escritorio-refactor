@@ -565,9 +565,13 @@ def generar_reporte_control(
         if 'Hasta' in consolidado.columns:
              consolidado['Hasta'] = pd.to_datetime(consolidado['Hasta'], dayfirst=True, errors='coerce')
 
-        # For billing period length, fallback to invoice date if the JSON date range is missing.
-        desde_facturacion = consolidado['Desde'].fillna(consolidado['Fecha'])
-        hasta_facturacion = consolidado['Hasta'].fillna(consolidado['Fecha'])
+        # Complete billing range with invoice date when JSON dates are missing.
+        consolidado['Desde'] = consolidado['Desde'].fillna(consolidado['Fecha'])
+        consolidado['Hasta'] = consolidado['Hasta'].fillna(consolidado['Fecha'])
+
+        # Billing period length now uses normalized Desde/Hasta columns.
+        desde_facturacion = consolidado['Desde']
+        hasta_facturacion = consolidado['Hasta']
 
         # Filter by dates? control.py has a commented out line for this. I'll skip.
 
