@@ -23,6 +23,7 @@ from mrbot_app.windows import (
     MisRetencionesWindow,
     SifereWindow,
     SctWindow,
+    SrtAlicuotasWindow,
     WebservicesWindow,
     ControlMonotributistasWindow,
     UsuarioWindow,
@@ -152,6 +153,9 @@ class MainMenu(tk.Tk):
             width=btn_width,
             command=self.open_procesar_pem,
         ).grid(row=6, column=1, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="SRT Alícuotas ART", width=btn_width, command=self.open_srt_alicuotas).grid(
+            row=6, column=0, padx=6, pady=4, sticky="nsew"
+        )
 
         btns.columnconfigure((0, 1, 2), weight=1, uniform="menu")
         for r in range(9):
@@ -219,6 +223,9 @@ class MainMenu(tk.Tk):
 
     def open_sct(self) -> None:
         SctWindow(self, self.current_config, self.example_paths)
+
+    def open_srt_alicuotas(self) -> None:
+        SrtAlicuotasWindow(self, self.current_config, self.example_paths)
 
     def open_ccma(self) -> None:
         CcmaWindow(self, self.current_config, self.example_paths)

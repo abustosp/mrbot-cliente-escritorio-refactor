@@ -1,6 +1,6 @@
 # Cliente API Mr Bot (Mis Comprobantes y módulos AFIP)
 
-Cliente Tkinter y librerías Python para usar los endpoints de api-bots.mrbot.com.ar (Mis Comprobantes, RCEL, SCT, CCMA, Apócrifos y Consulta CUIT), más el módulo `Webservices` para generación automática de token/sign vía API de certificados y apertura directa de DFE/Facturación web.
+Cliente Tkinter y librerías Python para usar los endpoints de api-bots.mrbot.com.ar (Mis Comprobantes, RCEL, SCT, SRT Alícuotas ART, CCMA, Apócrifos y Consulta CUIT), más el módulo `Webservices` para generación automática de token/sign vía API de certificados y apertura directa de DFE/Facturación web.
 
 ## Contenido rápido
 - Qué necesitas
@@ -58,7 +58,7 @@ python mrbot.py
 Desde la GUI puedes:
 - Editar base URL, API key y mail.
 - Procesar Mis Comprobantes masivo (usa `mrbot_app.mis_comprobantes.consulta_mc_csv`).
-- Consultar RCEL, SCT, CCMA, Apócrifos y CUIT (individual/masivo según módulo).
+- Consultar RCEL, SCT, SRT Alícuotas ART, CCMA, Apócrifos y CUIT (individual/masivo según módulo).
 - Abrir `Webservices` y seleccionar servicio (`veconsumerws` o `wsfe`).
 - Generar token/sign desde `https://api-certificados.mrbot.com.ar/` (sin consumir API middleware de e-ventanilla).
 - Guardar el body del response en JSON con `Guardar token y sign` en `descargas/webservices/{servicio}/{cuit}/`.
@@ -109,7 +109,7 @@ resultados = descargar_archivos_minio_concurrente(archivos, max_workers=10)
 │   ├── helpers.py
 │   ├── mis_comprobantes.py  # Lógica Mis Comprobantes (consulta y CSV masivo)
 │   ├── wsaa.py              # Obtención token/sign (veconsumerws/wsfe) vía api-certificados
-│   └── windows/             # mis_comprobantes, rcel, sct, ccma, apocrifos, consulta_cuit, webservices (token/sign)
+│   └── windows/             # mis_comprobantes, rcel, sct, srt_alicuotas, ccma, apocrifos, consulta_cuit, webservices (token/sign)
 ├── ejemplos_api/            # Excels de ejemplo (autogenerables)
 ├── Descarga-Mis-Comprobantes.{csv,xlsx}
 ├── tests/                   # Tests existentes (reubicados)
@@ -122,6 +122,7 @@ resultados = descargar_archivos_minio_concurrente(archivos, max_workers=10)
 - Mis Comprobantes: `POST /api/v1/mis_comprobantes/consulta` (GUI: “Descarga Mis Comprobantes”, código: `mrbot_app.mis_comprobantes.consulta_mc`)
 - RCEL: `POST /api/v1/rcel/consulta` (GUI: ventana RCEL)
 - SCT: `POST /api/v1/sct/consulta` (GUI: ventana SCT con descargas MinIO)
+- SRT Alícuotas ART: `POST /api/v1/srt/alicuotas/consulta` (GUI: ventana SRT con JSON individual por CUIT y Excel consolidado)
 - CCMA: `POST /api/v1/ccma/consulta`
 - Apócrifos: `GET /api/v1/apoc/consulta/{cuit}`
 - Consulta CUIT: `POST /api/v1/consulta_cuit/{individual|masivo}`
@@ -139,7 +140,7 @@ Helpers reutilizables: `mrbot_app/helpers.py` (safe_get/safe_post, previews de D
 ```bash
 python -m py_compile mrbot.py mrbot_app/*.py mrbot_app/windows/*.py
 # Tests (algunos requieren credenciales/Excels)
-pytest tests  # o python tests/test_sct_descarga.py
+pytest tests  # o python tests/test_sct_descarga.py o python tests/test_srt_alicuotas_descarga.py
 ```
 
 ## Releases por tag (GitHub Actions)

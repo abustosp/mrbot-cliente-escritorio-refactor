@@ -372,6 +372,28 @@ def ensure_example_excels() -> Dict[str, str]:
                 },
             ]
         ),
+        "srt_alicuotas.xlsx": pd.DataFrame(
+            [
+                {
+                    "procesar": "SI",
+                    "cuit_login": "20123456789",
+                    "clave": "clave_fiscal",
+                    "cuits_consulta": "30123456789,20987654321",
+                    "proxy_request": "NO",
+                    "ubicacion_descarga": "./descargas/SRT",
+                    "retry": "0",
+                },
+                {
+                    "procesar": "NO",
+                    "cuit_login": "20111111111",
+                    "clave": "clave_no",
+                    "cuits_consulta": "20999999999",
+                    "proxy_request": "NO",
+                    "ubicacion_descarga": "./descargas/SRT",
+                    "retry": "0",
+                },
+            ]
+        ),
         "apocrifos.xlsx": pd.DataFrame(
             [
                 {"cuit": "20333444555"},
@@ -505,6 +527,7 @@ def ensure_example_excels() -> Dict[str, str]:
             "mis_facilidades.xlsx",
             "pago_devoluciones.xlsx",
             "aportes_en_linea.xlsx",
+            "srt_alicuotas.xlsx",
             "control_monotributistas.xlsx",
             "bcra_central_deudores.xlsx",
             "bcra_cheques_denunciados.xlsx",
