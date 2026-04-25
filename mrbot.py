@@ -17,6 +17,7 @@ from mrbot_app.windows import (
     HaciendaWindow,
     LiquidacionGranosWindow,
     PagoDevolucionesWindow,
+    PortalIvaWindow,
     ProcesarPemWindow,
     MisFacilidadesWindow,
     RcelWindow,
@@ -73,92 +74,89 @@ class MainMenu(tk.Tk):
         self.config_pane = ConfigPane(self)
         self.config_pane.pack(fill="x", padx=10, pady=6)
 
-        btn_width = 28
+        btn_width = 22
 
         btns = ttk.Frame(self, padding=10)
         btns.pack(fill="both", expand=True)
 
         ttk.Button(btns, text="Editar .env", width=btn_width, command=self.open_env_file).grid(
-            row=0, column=0, padx=6, pady=(4, 12), sticky="nsew"
+            row=0, column=0, padx=4, pady=(4, 10), sticky="nsew"
         )
         ttk.Button(btns, text="Recargar .env", width=btn_width, command=self.reload_env_values).grid(
-            row=0, column=1, padx=6, pady=(4, 12), sticky="nsew"
+            row=0, column=1, padx=4, pady=(4, 10), sticky="nsew"
         )
         ttk.Button(btns, text="Usuarios", width=btn_width, command=self.open_usuario).grid(
-            row=0, column=2, padx=6, pady=(4, 12), sticky="nsew"
+            row=0, column=2, padx=4, pady=(4, 10), sticky="nsew"
         )
 
         ttk.Button(btns, text="Descarga Mis Comprobantes", width=btn_width, command=self.open_mis_comprobantes).grid(
-            row=1, column=0, padx=6, pady=4, sticky="nsew"
+            row=1, column=0, padx=4, pady=4, sticky="nsew"
         )
-        ttk.Button(btns, text="Sistema de Cuentas Tributarias (SCT)", width=btn_width, command=self.open_sct).grid(
-            row=1, column=1, padx=6, pady=4, sticky="nsew"
+        ttk.Button(btns, text="SCT", width=btn_width, command=self.open_sct).grid(
+            row=1, column=1, padx=4, pady=4, sticky="nsew"
         )
-        ttk.Button(btns, text="Cuenta Corriente (CCMA)", width=btn_width, command=self.open_ccma).grid(
-            row=1, column=2, padx=6, pady=4, sticky="nsew"
+        ttk.Button(btns, text="CCMA", width=btn_width, command=self.open_ccma).grid(
+            row=1, column=2, padx=4, pady=4, sticky="nsew"
+        )
+        ttk.Button(btns, text="Portal IVA", width=btn_width, command=self.open_portal_iva).grid(
+            row=1, column=3, padx=4, pady=4, sticky="nsew"
         )
 
-        ttk.Button(btns, text="Comprobantes en Linea (RCEL)", width=btn_width, command=self.open_rcel).grid(
-            row=2, column=0, padx=6, pady=4, sticky="nsew"
+        ttk.Button(btns, text="RCEL", width=btn_width, command=self.open_rcel).grid(
+            row=2, column=0, padx=4, pady=4, sticky="nsew"
         )
         ttk.Button(btns, text="Hacienda y Carne", width=btn_width, command=self.open_hacienda).grid(
-            row=2, column=1, padx=6, pady=4, sticky="nsew"
+            row=2, column=1, padx=4, pady=4, sticky="nsew"
         )
         ttk.Button(btns, text="Liquidacion de Granos", width=btn_width, command=self.open_liquidacion_granos).grid(
-            row=2, column=2, padx=6, pady=4, sticky="nsew"
+            row=2, column=2, padx=4, pady=4, sticky="nsew"
+        )
+        ttk.Button(btns, text="Mis Retenciones", width=btn_width, command=self.open_mis_retenciones).grid(
+            row=2, column=3, padx=4, pady=4, sticky="nsew"
         )
 
-        ttk.Button(btns, text="Mis Retenciones", width=btn_width, command=self.open_mis_retenciones).grid(
-            row=3, column=0, padx=6, pady=4, sticky="nsew"
-        )
-        ttk.Button(btns, text="SIFERE consultas", width=btn_width, command=self.open_sifere).grid(
-            row=3, column=1, padx=6, pady=4, sticky="nsew"
+        ttk.Button(btns, text="SIFERE", width=btn_width, command=self.open_sifere).grid(
+            row=3, column=0, padx=4, pady=4, sticky="nsew"
         )
         ttk.Button(btns, text="Mis Facilidades", width=btn_width, command=self.open_mis_facilidades).grid(
-            row=3, column=2, padx=6, pady=4, sticky="nsew"
+            row=3, column=1, padx=4, pady=4, sticky="nsew"
         )
-
         ttk.Button(btns, text="DDJJ en Linea", width=btn_width, command=self.open_declaracion_linea).grid(
-            row=4, column=0, padx=6, pady=4, sticky="nsew"
+            row=3, column=2, padx=4, pady=4, sticky="nsew"
         )
         ttk.Button(btns, text="Pago Devoluciones", width=btn_width, command=self.open_pago_devoluciones).grid(
-            row=4, column=1, padx=6, pady=4, sticky="nsew"
-        )
-        ttk.Button(btns, text="Aportes en Linea", width=btn_width, command=self.open_aportes_linea).grid(
-            row=4, column=2, padx=6, pady=4, sticky="nsew"
+            row=3, column=3, padx=4, pady=4, sticky="nsew"
         )
 
-        ttk.Button(btns, text="Consulta Apocrifos", width=btn_width, command=self.open_apoc).grid(
-            row=5, column=0, padx=6, pady=4, sticky="nsew"
+        ttk.Button(btns, text="Aportes en Linea", width=btn_width, command=self.open_aportes_linea).grid(
+            row=4, column=0, padx=4, pady=4, sticky="nsew"
         )
-        ttk.Button(btns, text="Consulta de CUIT", width=btn_width, command=self.open_cuit).grid(
-            row=5, column=1, padx=6, pady=4, sticky="nsew"
+        ttk.Button(btns, text="Apocrifos", width=btn_width, command=self.open_apoc).grid(
+            row=4, column=1, padx=4, pady=4, sticky="nsew"
         )
-        ttk.Button(
-            btns,
-            text="Webservices",
-            width=btn_width,
-            command=self.open_webservices,
-        ).grid(row=5, column=2, padx=6, pady=4, sticky="nsew")
+        ttk.Button(btns, text="Consulta CUIT", width=btn_width, command=self.open_cuit).grid(
+            row=4, column=2, padx=4, pady=4, sticky="nsew"
+        )
+        ttk.Button(btns, text="SRT Alicuotas ART", width=btn_width, command=self.open_srt_alicuotas).grid(
+            row=4, column=3, padx=4, pady=4, sticky="nsew"
+        )
+
+        ttk.Button(btns, text="Conversion PEM a Excel", width=btn_width, command=self.open_procesar_pem).grid(
+            row=5, column=0, padx=4, pady=4, sticky="nsew"
+        )
+        ttk.Button(btns, text="Webservices", width=btn_width, command=self.open_webservices).grid(
+            row=5, column=1, padx=4, pady=4, sticky="nsew"
+        )
 
         ttk.Button(btns, text="Control Monotributistas", width=btn_width, command=self.open_control_monotributistas).grid(
-            row=7, column=0, columnspan=3, padx=6, pady=4, sticky="nsew"
+            row=6, column=0, columnspan=2, padx=4, pady=4, sticky="nsew"
         )
         ttk.Button(btns, text="Consultas BCRA", width=btn_width, command=self.open_bcra).grid(
-            row=8, column=0, columnspan=3, padx=6, pady=4, sticky="nsew"
-        )
-        ttk.Button(
-            btns,
-            text="Conversión PEM a Excel",
-            width=btn_width,
-            command=self.open_procesar_pem,
-        ).grid(row=6, column=1, padx=6, pady=4, sticky="nsew")
-        ttk.Button(btns, text="SRT Alícuotas ART", width=btn_width, command=self.open_srt_alicuotas).grid(
-            row=6, column=0, padx=6, pady=4, sticky="nsew"
+            row=6, column=2, columnspan=2, padx=4, pady=4, sticky="nsew"
         )
 
-        btns.columnconfigure((0, 1, 2), weight=1, uniform="menu")
-        for r in range(9):
+        btns.columnconfigure((0, 1, 2, 3), weight=1, uniform="menu")
+        for r in range(7):
             btns.rowconfigure(r, weight=1)
 
     def current_config(self) -> tuple[str, str, str]:
@@ -244,6 +242,9 @@ class MainMenu(tk.Tk):
 
     def open_pago_devoluciones(self) -> None:
         PagoDevolucionesWindow(self, self.current_config, self.example_paths)
+
+    def open_portal_iva(self) -> None:
+        PortalIvaWindow(self, self.current_config, self.example_paths)
 
     def open_aportes_linea(self) -> None:
         AportesEnLineaWindow(self, self.current_config, self.example_paths)
