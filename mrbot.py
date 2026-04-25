@@ -28,6 +28,7 @@ from mrbot_app.windows import (
     WebservicesWindow,
     ControlMonotributistasWindow,
     UsuarioWindow,
+    RetPerProvincialesWindow,
 )
 from mrbot_app.windows.base import ConfigPane
 
@@ -148,15 +149,19 @@ class MainMenu(tk.Tk):
             row=5, column=1, padx=4, pady=4, sticky="nsew"
         )
 
+        ttk.Button(btns, text="Ret-Per Provinciales", width=btn_width, command=self.open_ret_per_provinciales).grid(
+            row=6, column=0, columnspan=4, padx=4, pady=4, sticky="nsew"
+        )
+
         ttk.Button(btns, text="Control Monotributistas", width=btn_width, command=self.open_control_monotributistas).grid(
-            row=6, column=0, columnspan=2, padx=4, pady=4, sticky="nsew"
+            row=7, column=0, columnspan=2, padx=4, pady=4, sticky="nsew"
         )
         ttk.Button(btns, text="Consultas BCRA", width=btn_width, command=self.open_bcra).grid(
-            row=6, column=2, columnspan=2, padx=4, pady=4, sticky="nsew"
+            row=7, column=2, columnspan=2, padx=4, pady=4, sticky="nsew"
         )
 
         btns.columnconfigure((0, 1, 2, 3), weight=1, uniform="menu")
-        for r in range(7):
+        for r in range(8):
             btns.rowconfigure(r, weight=1)
 
     def current_config(self) -> tuple[str, str, str]:
@@ -272,6 +277,9 @@ class MainMenu(tk.Tk):
 
     def open_procesar_pem(self) -> None:
         ProcesarPemWindow(self, self.current_config, self.example_paths)
+
+    def open_ret_per_provinciales(self) -> None:
+        RetPerProvincialesWindow(self, self.current_config, self.example_paths)
 
     def open_usuario(self) -> None:
         UsuarioWindow(self, self.current_config)

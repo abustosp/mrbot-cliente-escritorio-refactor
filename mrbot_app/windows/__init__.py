@@ -7,6 +7,10 @@ from mrbot_app.windows.declaracion_en_linea import DeclaracionEnLineaWindow
 from mrbot_app.windows.pago_devoluciones import PagoDevolucionesWindow
 from mrbot_app.windows.portal_iva import PortalIvaWindow
 from mrbot_app.windows.procesar_pem import ProcesarPemWindow
+from mrbot_app.windows.ret_per_provinciales import RetPerProvincialesWindow
+from mrbot_app.windows.ret_per_provinciales_arba import RetPerArbaWindow
+from mrbot_app.windows.ret_per_provinciales_agip import RetPerAgipWindow
+from mrbot_app.windows.ret_per_provinciales_misiones import RetPerMisionesWindow
 from mrbot_app.windows.mis_facilidades import MisFacilidadesWindow
 from mrbot_app.windows.mis_comprobantes import GuiDescargaMC
 from mrbot_app.windows.mis_retenciones import MisRetencionesWindow
@@ -30,6 +34,10 @@ __all__ = [
     "PagoDevolucionesWindow",
     "PortalIvaWindow",
     "ProcesarPemWindow",
+    "RetPerProvincialesWindow",
+    "RetPerArbaWindow",
+    "RetPerAgipWindow",
+    "RetPerMisionesWindow",
     "GuiDescargaMC",
     "RcelWindow",
     "HaciendaWindow",

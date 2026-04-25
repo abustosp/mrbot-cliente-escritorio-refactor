@@ -404,6 +404,86 @@ def ensure_example_excels() -> Dict[str, str]:
                 },
             ]
         ),
+        "ret_per_provinciales_arba.xlsx": pd.DataFrame(
+            [
+                {
+                    "procesar": "SI",
+                    "cuit": "20123456789",
+                    "clave": "clave_demo",
+                    "periodo": "202401",
+                    "denominacion": "Empresa Demo SA",
+                    "ubicacion_descarga": "/tmp/ret_per_arba",
+                    "proxy_request": "NO",
+                    "retry": "0",
+                },
+                {
+                    "procesar": "NO",
+                    "cuit": "20111111111",
+                    "clave": "clave_no",
+                    "periodo": "202401",
+                    "denominacion": "Ejemplo NO",
+                    "ubicacion_descarga": "",
+                    "proxy_request": "NO",
+                    "retry": "0",
+                },
+            ]
+        ),
+        "ret_per_provinciales_agip.xlsx": pd.DataFrame(
+            [
+                {
+                    "procesar": "SI",
+                    "usuario": "usuario@ejemplo.com",
+                    "clave": "clave_demo",
+                    "cuit_representado": "20987654321",
+                    "denominacion": "Empresa Demo SA",
+                    "desde": "202401",
+                    "hasta": "202412",
+                    "ubicacion_descarga": "/tmp/ret_per_agip",
+                    "proxy_request": "NO",
+                    "retry": "0",
+                },
+                {
+                    "procesar": "NO",
+                    "usuario": "usuario_no@ejemplo.com",
+                    "clave": "clave_no",
+                    "cuit_representado": "20999999999",
+                    "denominacion": "Ejemplo NO",
+                    "desde": "202401",
+                    "hasta": "202412",
+                    "ubicacion_descarga": "",
+                    "proxy_request": "NO",
+                    "retry": "0",
+                },
+            ]
+        ),
+        "ret_per_provinciales_misiones.xlsx": pd.DataFrame(
+            [
+                {
+                    "procesar": "SI",
+                    "cuit_representante": "20123456789",
+                    "clave_representante": "clave_demo",
+                    "cuit_representado": "20987654321",
+                    "denominacion": "Empresa Demo SA",
+                    "desde": "202401",
+                    "hasta": "202412",
+                    "ubicacion_descarga": "/tmp/ret_per_misiones",
+                    "proxy_request": "NO",
+                    "retry": "0",
+                },
+                {
+                    "procesar": "NO",
+                    "cuit_representante": "20111111111",
+                    "clave_representante": "clave_no",
+                    "cuit_representado": "20999999999",
+                    "denominacion": "Ejemplo NO",
+                    "desde": "202401",
+                    "hasta": "202412",
+                    "ubicacion_descarga": "",
+                    "proxy_request": "NO",
+                    "retry": "0",
+                },
+            ]
+        ),
         "aportes_en_linea.xlsx": pd.DataFrame(
             [
                 {
@@ -581,6 +661,9 @@ def ensure_example_excels() -> Dict[str, str]:
             "mis_facilidades.xlsx",
             "pago_devoluciones.xlsx",
             "portal_iva.xlsx",
+            "ret_per_provinciales_arba.xlsx",
+            "ret_per_provinciales_agip.xlsx",
+            "ret_per_provinciales_misiones.xlsx",
             "aportes_en_linea.xlsx",
             "srt_alicuotas.xlsx",
             "control_monotributistas.xlsx",
