@@ -230,14 +230,15 @@ class PortalIvaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         download_root: str,
         descarga_ventas: bool,
         descarga_compras: bool,
-    ) -> List[str]:
+    ) -> tuple[int, List[str]]:
+        downloads_total = 0
         errors = []
 
         success, error_text = self._get_success_and_error(response)
         if not success:
             msg = error_text or "Error desconocido"
             self.log_error(f"Error en API: {msg}")
-            return [msg]
+            return 0, [msg]
 
         archivos = self._extract_archivos(response)
 
@@ -256,11 +257,12 @@ class PortalIvaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
 
             link_obj = {"url": url, "filename": f"{libro.capitalize()}.zip"}
             downloads, errs = self._download_links_direct([link_obj], subdir)
+            downloads_total += downloads
             if downloads:
                 self.log_info(f"{libro.capitalize()} descargado en: {subdir}")
             errors.extend(errs)
 
-        return errors
+        return downloads_total, errors
 
     def _process_response_excel(
         self,
@@ -270,14 +272,15 @@ class PortalIvaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         ub_compras: str,
         nom_compras: str,
         fallback_root: str,
-    ) -> List[str]:
+    ) -> tuple[int, List[str]]:
+        downloads_total = 0
         errors = []
 
         success, error_text = self._get_success_and_error(response)
         if not success:
             msg = error_text or "Error desconocido"
             self.log_error(f"Error en API: {msg}")
-            return [msg]
+            return 0, [msg]
 
         archivos = self._extract_archivos(response)
 
@@ -328,6 +331,7 @@ class PortalIvaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             final_filename_zip = get_unique_filename(target_dir, filename_zip)
             link_obj = {"url": url, "filename": final_filename_zip}
             downloads, errs = self._download_links_direct([link_obj], target_dir)
+            downloads_total += downloads
 
             if errs:
                 errors.extend(errs)
@@ -341,11 +345,11 @@ class PortalIvaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
                 if extracted_path:
                     self.log_info(f"Descomprimido: {os.path.basename(extracted_path)}")
                 else:
-                    self.log_warning(
-                        f"No se pudo descomprimir/renombrar {full_zip_path}"
-                    )
+                    warning = f"No se pudo descomprimir/renombrar {full_zip_path}"
+                    self.log_warning(warning)
+                    errors.append(warning)
 
-        return errors
+        return downloads_total, errors
 
     def _download_links_direct(
         self, links: List[Dict[str, str]], dest_dir: str
@@ -459,6 +463,7 @@ class PortalIvaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         self.run_in_thread(self._worker_excel, df_copy, default_proxy)
 
     def _worker_excel(self, df: pd.DataFrame, default_proxy: bool) -> None:
+        rows: List[Dict[str, Any]] = []
         total = len(df)
         self.set_progress(0, total)
         max_workers = get_max_workers()
@@ -488,19 +493,24 @@ class PortalIvaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
                     break
 
                 try:
-                    future.result()
-                except Exception:
-                    pass
+                    result = future.result()
+                    if result:
+                        rows.append(result)
+                except Exception as exc:
+                    self.log_error(f"Error en fila {idx}: {exc}")
 
                 self.set_progress(completed, total)
 
+        out_df = pd.DataFrame(rows)
+        self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))
+        self.set_execution_summary(self.build_download_execution_summary("Portal IVA", rows, total_expected=total))
         self.log_info("Procesamiento masivo finalizado.")
 
     def _process_row_portal_iva(
         self, row: pd.Series, default_proxy: bool
-    ) -> None:
+    ) -> Optional[Dict[str, Any]]:
         if self._abort_event.is_set():
-            return
+            return None
 
         cuit_representante = str(row.get("cuit_representante", "")).strip()
         clave = str(row.get("clave_representante", "") or row.get("clave", "") or row.get("contrasena", "")).strip()
@@ -593,7 +603,7 @@ class PortalIvaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             if response.get("success", False):
                 break
 
-        self._process_response_excel(
+        downloads, errors = self._process_response_excel(
             response,
             ub_ventas,
             nom_ventas,
@@ -601,3 +611,12 @@ class PortalIvaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             nom_compras,
             fallback_dir,
         )
+        success, error_text = self._get_success_and_error(response)
+        return {
+            "cuit_representado": cuit_representado or cuit_representante,
+            "success": success,
+            "message": error_text or None,
+            "descargas": downloads,
+            "errores_descarga": "; ".join(errors) if errors else None,
+            "descarga_esperada": descarga_ventas or descarga_compras,
+        }

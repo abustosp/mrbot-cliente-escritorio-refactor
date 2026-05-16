@@ -11,7 +11,13 @@ from tkinter import ttk, messagebox, filedialog, scrolledtext
 
 import pandas as pd
 
-from mrbot_app.config import DEFAULT_API_KEY, DEFAULT_BASE_URL, DEFAULT_EMAIL, reload_env_defaults
+from mrbot_app.config import (
+    DEFAULT_API_KEY,
+    DEFAULT_BASE_URL,
+    DEFAULT_EMAIL,
+    get_notificacion_messagebox,
+    reload_env_defaults,
+)
 from mrbot_app.constants import BG, FG
 from mrbot_app.helpers import _format_dates_str
 
@@ -20,6 +26,7 @@ class BaseWindow(tk.Toplevel):
     def __init__(self, master=None, title: str = "", config_provider=None):
         super().__init__(master)
         self.config_provider = config_provider
+        self.window_title = title or self.__class__.__name__
         self.configure(background=BG)
         self.title(title)
         self.resizable(False, False)
@@ -34,6 +41,7 @@ class BaseWindow(tk.Toplevel):
         self.abort_btn = None
         self.log_windows = []  # Keep track of open log windows
         self._log_block_local = threading.local()
+        self._execution_summary: Optional[Dict[str, Any]] = None
 
         # Traer ventana al frente
         self.lift()
@@ -163,6 +171,9 @@ class BaseWindow(tk.Toplevel):
     def log_info(self, message: str) -> None:
         self.log_message(self._prefix_lines("INFO: ", message))
 
+    def log_warning(self, message: str) -> None:
+        self.log_message(self._prefix_lines("WARNING: ", message))
+
     def log_error(self, message: str) -> None:
         self.log_message(self._prefix_lines("ERROR: ", message))
 
@@ -207,6 +218,178 @@ class BaseWindow(tk.Toplevel):
     def log_separator(self, label: str) -> None:
         sep = "-" * 60
         self.log_message(f"{sep}\nCONTRIBUYENTE: {label}\n{sep}")
+
+    def clear_execution_summary(self) -> None:
+        self._execution_summary = None
+
+    def set_execution_summary(self, summary: Optional[Dict[str, Any]]) -> None:
+        self._execution_summary = summary if summary else None
+
+    def _safe_int(self, value: Any, default: int = 0) -> int:
+        try:
+            if value is None or value == "":
+                return default
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _coerce_optional_bool(self, value: Any) -> Optional[bool]:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return None
+        text = str(value).strip().lower()
+        if not text:
+            return None
+        if text in {"1", "true", "t", "si", "sí", "s", "yes", "y"}:
+            return True
+        if text in {"0", "false", "f", "no", "n"}:
+            return False
+        return None
+
+    def _has_value(self, value: Any) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, str):
+            return bool(value.strip())
+        if isinstance(value, (list, tuple, set, dict)):
+            return len(value) > 0
+        return True
+
+    def _classify_download_result(self, row: Dict[str, Any]) -> str:
+        if not isinstance(row, dict) or not row:
+            return "error"
+
+        descargas = self._safe_int(row.get("descargas"), default=0)
+        success_value = self._coerce_optional_bool(row.get("success"))
+        descarga_esperada = self._coerce_optional_bool(row.get("descarga_esperada"))
+        status = str(row.get("status", "")).strip().lower()
+        http_status = row.get("http_status")
+        download_errors = self._has_value(row.get("errores_descarga"))
+        post_errors = self._has_value(row.get("errores_postproceso"))
+        explicit_error = (
+            self._has_value(row.get("error"))
+            or self._has_value(row.get("error_message"))
+            or status == "sin_salida"
+        )
+
+        try:
+            http_status_int = int(http_status) if http_status is not None else None
+        except (TypeError, ValueError):
+            http_status_int = None
+
+        if descarga_esperada is False:
+            if download_errors or post_errors:
+                return "warning"
+            if success_value is False or explicit_error:
+                return "error"
+            if http_status_int is not None and http_status_int >= 400:
+                return "error"
+            return "success"
+
+        if download_errors or post_errors:
+            if descargas > 0 or success_value is True or http_status_int == 200:
+                return "warning"
+            return "error"
+
+        if success_value is False or explicit_error:
+            if descargas > 0:
+                return "warning"
+            return "error"
+
+        if http_status_int is not None and http_status_int >= 400:
+            if descargas > 0:
+                return "warning"
+            return "error"
+
+        if descargas > 0:
+            return "success"
+
+        if success_value is True or http_status_int == 200 or status in {"ok", "success", "completed", "completado"}:
+            return "warning"
+
+        return "error"
+
+    def build_download_execution_summary(
+        self,
+        source: str,
+        rows: list[Dict[str, Any]],
+        total_expected: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        total = int(total_expected if total_expected is not None else len(rows))
+        success_count = 0
+        warning_count = 0
+        error_count = 0
+
+        for row in rows:
+            status = self._classify_download_result(row)
+            if status == "success":
+                success_count += 1
+            elif status == "warning":
+                warning_count += 1
+            else:
+                error_count += 1
+
+        processed = success_count + warning_count + error_count
+        if total > processed:
+            error_count += total - processed
+
+        return {
+            "source": source,
+            "total": max(total, 0),
+            "success": max(success_count, 0),
+            "warning": max(warning_count, 0),
+            "error": max(error_count, 0),
+        }
+
+    def _build_execution_message(self, summary: Dict[str, Any]) -> tuple[str, str, Callable[[str, str], str]]:
+        source = str(summary.get("source") or self.window_title)
+        total = self._safe_int(summary.get("total"), default=0)
+        success_count = self._safe_int(summary.get("success"), default=0)
+        warning_count = self._safe_int(summary.get("warning"), default=0)
+        error_count = self._safe_int(summary.get("error"), default=0)
+
+        if total <= 0:
+            return "", "", messagebox.showinfo
+
+        if error_count >= total:
+            title = "Proceso con error"
+            headline = "Todas las descargas fallaron."
+            message_fn = messagebox.showerror
+        elif error_count > 0 or warning_count > 0:
+            title = "Proceso con advertencias"
+            headline = "Proceso finalizado con advertencias."
+            message_fn = messagebox.showwarning
+        else:
+            title = "Proceso exitoso"
+            headline = "Todas las descargas finalizaron correctamente."
+            message_fn = messagebox.showinfo
+
+        body_lines = [
+            headline,
+            "",
+            f"Bot: {source}",
+            f"Total procesados: {total}",
+            f"Exitosos: {success_count}",
+            f"Con advertencia: {warning_count}",
+            f"Fallidos: {error_count}",
+        ]
+        return title, "\n".join(body_lines), message_fn
+
+    def maybe_show_execution_summary(self) -> None:
+        if not get_notificacion_messagebox():
+            self.clear_execution_summary()
+            return
+
+        summary = self._execution_summary
+        self.clear_execution_summary()
+        if not summary:
+            return
+
+        title, message, message_fn = self._build_execution_message(summary)
+        if not title or not message:
+            return
+        message_fn(title, message)
 
     def add_progress_bar(self, parent, label: str = "Progreso") -> ttk.LabelFrame:
         style = ttk.Style(self)
@@ -393,6 +576,7 @@ class BaseWindow(tk.Toplevel):
             if self.abort_btn:
                 self.abort_btn.state(["!disabled"])
 
+        self.clear_execution_summary()
         self._abort_event.clear()
 
         def _wrapper():
@@ -414,8 +598,12 @@ class BaseWindow(tk.Toplevel):
             self.throbber_frame.grid_remove()
 
         if self._abort_event.is_set():
+            self.clear_execution_summary()
             self.log_info("Proceso abortado por el usuario.")
             messagebox.showinfo("Abortado", "El proceso fue detenido por el usuario.")
+            return
+
+        self.maybe_show_execution_summary()
 
     def abort_process(self) -> None:
         """Signal the worker thread to stop."""

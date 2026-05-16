@@ -244,13 +244,14 @@ class PagoDevolucionesWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin
                     result = future.result()
                     if result:
                         rows.append(result)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    self.log_error(f"Error en fila {completed}: {exc}")
 
                 self.set_progress(completed, total)
 
         out_df = pd.DataFrame(rows)
         self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))
+        self.set_execution_summary(self.build_download_execution_summary("Pago Devoluciones", rows, total_expected=total))
         self.log_info("Procesamiento masivo finalizado.")
 
     def _process_row_pago_devoluciones(self, row, url, headers, default_proxy, default_carga_minio):
@@ -318,6 +319,7 @@ class PagoDevolucionesWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin
             "success": data.get("success") if isinstance(data, dict) else None,
             "message": data.get("message") if isinstance(data, dict) else None,
             "error": api_error,
+            "descarga_esperada": carga_minio,
             "descargas": downloads,
             "errores_descarga": "; ".join(errors) if errors else None,
             "carpeta_descarga": download_dir,

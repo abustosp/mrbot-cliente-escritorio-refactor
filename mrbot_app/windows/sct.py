@@ -407,13 +407,14 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
                     result = future.result()
                     if result:
                         rows.append(result)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    self.log_error(f"Error en fila {idx}: {exc}")
 
                 self.set_progress(completed, total)
 
         out_df = pd.DataFrame(rows)
         self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))
+        self.set_execution_summary(self.build_download_execution_summary("SCT", rows, total_expected=total))
         self.log_info("Procesamiento masivo finalizado.")
 
     def _process_row_sct(self, row, url, headers, defaults):
@@ -447,6 +448,7 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
                 "http_status": None,
                 "status": "sin_salida",
                 "error_message": "Sin formato de salida seleccionado para esta fila",
+                "descarga_esperada": False,
             }
 
         block_config = {
@@ -515,6 +517,7 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
             "http_status": resp.get("http_status"),
             "status": data.get("status") if isinstance(data, dict) else None,
             "error_message": data.get("error_message") if isinstance(data, dict) else None,
+            "descarga_esperada": True,
             "descargas": downloads,
             "errores_descarga": "; ".join(download_errors) if download_errors else None,
         }

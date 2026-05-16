@@ -204,6 +204,7 @@ class AportesEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
 
         out_df = pd.DataFrame(rows)
         self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))
+        self.set_execution_summary(self.build_download_execution_summary("Aportes en Linea", rows, total_expected=total))
 
     def _process_row_aportes(self, row, url, headers, default_proxy):
         if self._abort_event.is_set():
@@ -263,6 +264,7 @@ class AportesEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             "http_status": resp.get("http_status"),
             "status": data.get("status") if isinstance(data, dict) else None,
             "error_message": data.get("error_message") if isinstance(data, dict) else None,
+            "descarga_esperada": True,
             "descargas": downloads,
             "errores_descarga": "; ".join(errors) if errors else None,
             "carpeta_descarga": download_dir,

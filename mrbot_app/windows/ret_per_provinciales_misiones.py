@@ -12,6 +12,7 @@ from mrbot_app.config import get_max_workers
 from mrbot_app.ret_per_provinciales import consulta_misiones, FALLBACK_BASE_DIR
 from mrbot_app.helpers import (
     build_headers,
+    df_preview,
     ensure_trailing_slash,
     safe_get,
     parse_bool_cell,
@@ -157,13 +158,14 @@ class RetPerMisionesWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             "proxy_request": bool(self.proxy_var.get()),
         }
 
-    def _process_single_response(self, response: Dict[str, Any], download_root: str) -> List[str]:
+    def _process_single_response(self, response: Dict[str, Any], download_root: str) -> tuple[int, List[str]]:
+        downloads_total = 0
         errors = []
         success, error_text = self._get_success_and_error(response)
         if not success:
             msg = error_text or "Error desconocido"
             self.log_error(f"Error en API: {msg}")
-            return [msg]
+            return 0, [msg]
 
         archivos = self._extract_archivos(response)
         for item in archivos:
@@ -172,18 +174,20 @@ class RetPerMisionesWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             os.makedirs(download_root, exist_ok=True)
             link_obj = {"url": url, "filename": item["archivo"]}
             downloads, errs = self._download_links_direct([link_obj], download_root)
+            downloads_total += downloads
             if downloads:
                 self.log_info(f"{item['tipo']} descargado en: {download_root}")
             errors.extend(errs)
-        return errors
+        return downloads_total, errors
 
-    def _process_response_excel(self, response: Dict[str, Any], ubicacion: str, fallback_root: str) -> List[str]:
+    def _process_response_excel(self, response: Dict[str, Any], ubicacion: str, fallback_root: str) -> tuple[int, List[str]]:
+        downloads_total = 0
         errors = []
         success, error_text = self._get_success_and_error(response)
         if not success:
             msg = error_text or "Error desconocido"
             self.log_error(f"Error en API: {msg}")
-            return [msg]
+            return 0, [msg]
 
         archivos = self._extract_archivos(response)
         target_dir = ubicacion if ubicacion else fallback_root
@@ -198,11 +202,12 @@ class RetPerMisionesWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             final_filename = get_unique_filename(target_dir, item["archivo"])
             link_obj = {"url": url, "filename": final_filename}
             downloads, errs = self._download_links_direct([link_obj], target_dir)
+            downloads_total += downloads
             if errs:
                 errors.extend(errs)
             if downloads:
                 self.log_info(f"{item['tipo']} descargado en: {os.path.join(target_dir, final_filename)}")
-        return errors
+        return downloads_total, errors
 
     def _download_links_direct(self, links: List[Dict[str, str]], dest_dir: str) -> tuple[int, List[str]]:
         from mrbot_app.windows.minio_helpers import download_links
@@ -259,6 +264,7 @@ class RetPerMisionesWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         self.run_in_thread(self._worker_excel, df_copy, default_proxy)
 
     def _worker_excel(self, df: pd.DataFrame, default_proxy: bool) -> None:
+        rows: List[Dict[str, Any]] = []
         total = len(df)
         self.set_progress(0, total)
         max_workers = get_max_workers()
@@ -279,15 +285,19 @@ class RetPerMisionesWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
                     executor.shutdown(wait=False, cancel_futures=True)
                     break
                 try:
-                    future.result()
-                except Exception:
-                    pass
+                    result = future.result()
+                    if result:
+                        rows.append(result)
+                except Exception as exc:
+                    self.log_error(f"Error en fila {completed}: {exc}")
                 self.set_progress(completed, total)
+        self.set_preview(self.preview, df_preview(pd.DataFrame(rows), rows=min(20, len(rows))))
+        self.set_execution_summary(self.build_download_execution_summary("Ret-Per Misiones", rows, total_expected=total))
         self.log_info("Procesamiento masivo finalizado.")
 
-    def _process_row(self, row, default_proxy: bool) -> None:
+    def _process_row(self, row, default_proxy: bool) -> Optional[Dict[str, Any]]:
         if self._abort_event.is_set():
-            return
+            return None
         cuit_rep = str(row.get("cuit_representante", "")).strip()
         clave = str(row.get("clave_representante", "") or row.get("clave", "")).strip()
         cuit_repr = str(row.get("cuit_representado", "")).strip() or cuit_rep
@@ -322,4 +332,13 @@ class RetPerMisionesWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             )
             if response.get("success", False) or response.get("detail", {}).get("success", False):
                 break
-        self._process_response_excel(response, ubicacion, fallback_dir)
+        downloads, errors = self._process_response_excel(response, ubicacion, fallback_dir)
+        success, error_text = self._get_success_and_error(response)
+        return {
+            "cuit_representado": cuit_repr or cuit_rep,
+            "success": success,
+            "message": error_text or None,
+            "descarga_esperada": True,
+            "descargas": downloads,
+            "errores_descarga": "; ".join(errors) if errors else None,
+        }

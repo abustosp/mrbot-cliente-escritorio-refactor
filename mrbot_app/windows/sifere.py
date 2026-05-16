@@ -275,13 +275,14 @@ class SifereWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
                     result = future.result()
                     if result:
                         rows.append(result)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    self.log_error(f"Error en fila {idx}: {exc}")
 
                 self.set_progress(completed, total)
 
         out_df = pd.DataFrame(rows)
         self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))
+        self.set_execution_summary(self.build_download_execution_summary("SIFERE", rows, total_expected=total))
         self.log_info("Procesamiento masivo finalizado.")
 
     def _process_row_sifere(self, row, url, headers, default_proxy):
@@ -303,6 +304,7 @@ class SifereWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
                 "http_status": None,
                 "success": False,
                 "message": error,
+                "descarga_esperada": True,
                 "descargas": 0,
                 "errores_descarga": None,
                 "carpeta_descarga": None,
@@ -354,6 +356,7 @@ class SifereWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             "http_status": resp.get("http_status"),
             "success": data.get("success") if isinstance(data, dict) else None,
             "message": data.get("message") if isinstance(data, dict) else None,
+            "descarga_esperada": True,
             "descargas": downloads,
             "errores_descarga": "; ".join(errors) if errors else None,
             "carpeta_descarga": download_dir,

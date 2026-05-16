@@ -10,6 +10,7 @@ import requests
 from dotenv import load_dotenv
 
 from mrbot_app.consulta import descargar_archivos_minio_concurrente
+from mrbot_app.config import get_notificacion_messagebox
 from mrbot_app.helpers import format_date_str
 
 
@@ -661,26 +662,34 @@ def consulta_mc_csv(
 
     _log_message(f"{'-' * 60}\nProcesamiento masivo finalizado\n{'-' * 60}", log_fn)
 
+    if not get_notificacion_messagebox():
+        return
+
     try:
         from tkinter import messagebox
 
         total_procesados = len(filas_a_procesar)
         exitosos = total_procesados - len(errores) - len(errores2)
+        fallidos = max(total_procesados - exitosos, 0)
 
         mensaje = "Procesamiento completado\n\n"
         mensaje += f"Total procesados: {total_procesados}\n"
         mensaje += f"Exitosos: {exitosos}\n"
+        mensaje += f"Fallidos: {fallidos}\n"
 
         if errores:
             mensaje += f"Errores de ejecución: {len(errores)}\n"
         if errores2:
             mensaje += f"Errores de API: {len(errores2)}\n"
 
-        if errores or errores2:
+        if total_procesados > 0 and exitosos == 0:
+            mensaje += "\nTodas las descargas fallaron."
+            messagebox.showerror("Procesamiento con error", mensaje)
+        elif errores or errores2:
             mensaje += "\nRevisa los archivos de errores para más detalles."
-            messagebox.showwarning("Procesamiento Finalizado", mensaje)
+            messagebox.showwarning("Procesamiento con advertencias", mensaje)
         else:
-            mensaje += "\n¡Todos los archivos se descargaron correctamente!"
-            messagebox.showinfo("Procesamiento Exitoso", mensaje)
+            mensaje += "\nTodas las descargas finalizaron correctamente."
+            messagebox.showinfo("Procesamiento exitoso", mensaje)
     except ImportError:
         pass

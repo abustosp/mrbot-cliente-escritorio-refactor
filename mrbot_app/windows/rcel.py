@@ -334,13 +334,14 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
                     result_row = future.result()
                     if result_row:
                         rows.append(result_row)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    self.log_error(f"Error en fila {idx}: {exc}")
 
                 self.set_progress(completed, total)
 
         out_df = pd.DataFrame(rows)
         self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))
+        self.set_execution_summary(self.build_download_execution_summary("RCEL", rows, total_expected=total))
         self.log_info("Procesamiento masivo finalizado.")
 
     def _process_row_rcel(self, row, url, headers, default_desde, default_hasta, b64_pdf, minio_upload, default_proxy):
@@ -418,6 +419,7 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
             "http_status": resp.get("http_status"),
             "success": data.get("success") if isinstance(data, dict) else None,
             "message": data.get("message") if isinstance(data, dict) else None,
+            "descarga_esperada": minio_upload,
             "descargas": downloads,
             "errores_descarga": "; ".join(download_errors) if download_errors else None,
             "carpeta_descarga": download_dir_used,

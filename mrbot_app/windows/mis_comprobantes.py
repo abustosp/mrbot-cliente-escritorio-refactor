@@ -185,16 +185,17 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
                                 d_emitidos: bool, d_recibidos: bool,
                                 ub_emitidos: str, nom_emitidos: str,
                                 ub_recibidos: str, nom_recibidos: str,
-                                fallback_root: str) -> List[str]:
+                                fallback_root: str) -> tuple[int, List[str]]:
         """
         Procesa la respuesta para Excel, usando ubicaciones y nombres custom si existen,
         y descomprimiendo el ZIP.
         """
+        downloads_total = 0
         errors = []
         if not response.get("success", False):
             error_msg = response.get("error", response.get("detail", response.get("message", "Error desconocido")))
             self.log_error(f"Error en API: {error_msg}")
-            return [str(error_msg)]
+            return 0, [str(error_msg)]
 
         def _handle_file(url_key: str, default_subdir: str, custom_path: str, custom_name: str, desc: str):
             url = response.get(url_key)
@@ -243,6 +244,7 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
 
             link_obj = {"url": url, "filename": final_filename_zip}
             downloads, errs = self._download_links_direct([link_obj], target_dir)
+            downloads_total += downloads
 
             if errs:
                 errors.extend(errs)
@@ -259,7 +261,9 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
                 if extracted_path:
                     self.log_info(f"Descomprimido: {os.path.basename(extracted_path)}")
                 else:
-                    self.log_warning(f"No se pudo descomprimir/renombrar {full_zip_path} (quizás no contiene un único archivo o error zip).")
+                    warning = f"No se pudo descomprimir/renombrar {full_zip_path} (quizás no contiene un único archivo o error zip)."
+                    self.log_warning(warning)
+                    errors.append(warning)
 
         if d_emitidos:
             _handle_file("mis_comprobantes_emitidos_url_minio", "Emitidos", ub_emitidos, nom_emitidos, "Emitidos")
@@ -267,7 +271,7 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
         if d_recibidos:
             _handle_file("mis_comprobantes_recibidos_url_minio", "Recibidos", ub_recibidos, nom_recibidos, "Recibidos")
 
-        return errors
+        return downloads_total, errors
 
     def _download_links_direct(self, links: List[Dict[str, str]], dest_dir: str) -> tuple[int, List[str]]:
         from mrbot_app.windows.minio_helpers import download_links
@@ -357,6 +361,7 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
         self.run_in_thread(self._worker_excel, df_copy, default_desde, default_hasta, default_proxy)
 
     def _worker_excel(self, df, default_desde, default_hasta, default_proxy):
+        rows: List[Dict[str, Any]] = []
         total = len(df)
         self.set_progress(0, total)
         max_workers = get_max_workers()
@@ -392,17 +397,22 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
                     break
 
                 try:
-                    future.result()
-                except Exception:
-                    pass
+                    result = future.result()
+                    if result:
+                        rows.append(result)
+                except Exception as exc:
+                    self.log_error(f"Error en fila {idx}: {exc}")
 
                 self.set_progress(completed, total)
 
+        out_df = pd.DataFrame(rows)
+        self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))
+        self.set_execution_summary(self.build_download_execution_summary("Mis Comprobantes", rows, total_expected=total))
         self.log_info("Procesamiento masivo finalizado.")
 
     def _process_row_mc(self, row, default_desde, default_hasta, default_proxy):
         if self._abort_event.is_set():
-            return
+            return None
 
         desde = format_date_str(row.get("desde", "")) or default_desde
         hasta = format_date_str(row.get("hasta", "")) or default_hasta
@@ -476,10 +486,18 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
                 break
 
         # Use new processing method
-        self._process_response_excel(
+        downloads, errors = self._process_response_excel(
             response, cuit_repr, nombre_repr,
             d_emitidos, d_recibidos,
             ub_emitidos, nom_emitidos,
             ub_recibidos, nom_recibidos,
             fallback_dir
         )
+        return {
+            "cuit_representado": cuit_repr or cuit_inicio,
+            "success": response.get("success", False),
+            "message": response.get("error") or response.get("detail") or response.get("message"),
+            "descargas": downloads,
+            "errores_descarga": "; ".join(errors) if errors else None,
+            "descarga_esperada": d_emitidos or d_recibidos,
+        }

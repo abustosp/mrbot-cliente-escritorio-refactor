@@ -21,6 +21,18 @@ def _get_env_int(name: str, default: int) -> int:
         return default
 
 
+def _get_env_bool(name: str, default: bool) -> bool:
+    val = os.getenv(name)
+    if val is None:
+        return default
+    text = str(val).strip().lower()
+    if text in {"1", "true", "t", "si", "sí", "s", "yes", "y"}:
+        return True
+    if text in {"0", "false", "f", "no", "n"}:
+        return False
+    return default
+
+
 # Cargar variables de entorno para valores por defecto
 _load_env()
 DEFAULT_BASE_URL = os.getenv("URL", _BASE_URL_FALLBACK)
@@ -29,6 +41,7 @@ DEFAULT_EMAIL = os.getenv("MAIL", "")
 DEFAULT_POST_TIMEOUT = _get_env_int("TIMEOUT_POST", 120)
 DEFAULT_GET_TIMEOUT = _get_env_int("TIMEOUT_GET", 60)
 DEFAULT_MAX_WORKERS = _get_env_int("MAX_WORKERS_MRBOT_API", 1)
+DEFAULT_NOTIFICACION_MESSAGEBOX = _get_env_bool("NOTIFICACION_MESSAGEBOX", False)
 
 
 def reload_env_defaults() -> tuple[str, str, str]:
@@ -59,3 +72,11 @@ def get_max_workers() -> int:
     Lee MAX_WORKERS_MRBOT_API del entorno, default 1.
     """
     return _get_env_int("MAX_WORKERS_MRBOT_API", DEFAULT_MAX_WORKERS)
+
+
+def get_notificacion_messagebox() -> bool:
+    """
+    Devuelve si se debe mostrar un messagebox al finalizar bots con descarga.
+    Lee NOTIFICACION_MESSAGEBOX del entorno, default False.
+    """
+    return _get_env_bool("NOTIFICACION_MESSAGEBOX", DEFAULT_NOTIFICACION_MESSAGEBOX)

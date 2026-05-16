@@ -259,6 +259,7 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
     def _worker_mc(self):
         df = self.excel_df
         total = len(df)
+        rows = []
         self._set_stage_progress("mc", 0, total)
         max_workers = get_max_workers()
 
@@ -283,12 +284,21 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
                     break
 
                 try:
-                    future.result()
+                    result = future.result()
+                    if result:
+                        rows.append(result)
                 except Exception as e:
                     self._log_error_stage("mc", f"Error en fila {idx}: {e}")
 
                 self._set_stage_progress("mc", completed, total)
 
+        self.set_execution_summary(
+            self.build_download_execution_summary(
+                "Control Monotributistas - Descarga MC",
+                rows,
+                total_expected=total,
+            )
+        )
         self._log_info_stage("mc", "Descarga MC finalizada.")
 
     def _process_row_mc_control(self, row):
@@ -310,6 +320,7 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
     def _worker_rcel(self):
         df = self.excel_df
         total = len(df)
+        rows = []
         self._set_stage_progress("rcel", 0, total)
         config = self._get_config()  # (url, api_key, email)
         max_workers = get_max_workers()
@@ -336,12 +347,21 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
                     break
 
                 try:
-                    future.result()
+                    result = future.result()
+                    if result:
+                        rows.append(result)
                 except Exception as e:
                     self._log_error_stage("rcel", f"Error en fila {idx}: {e}")
 
                 self._set_stage_progress("rcel", completed, total)
 
+        self.set_execution_summary(
+            self.build_download_execution_summary(
+                "Control Monotributistas - Descarga RCEL",
+                rows,
+                total_expected=total,
+            )
+        )
         self._log_info_stage("rcel", "Descarga RCEL finalizada.")
 
     def _process_row_rcel_control(self, row, config):

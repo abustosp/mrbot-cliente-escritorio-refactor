@@ -310,12 +310,13 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
                         movimientos_rows.extend(result_movs)
                     if req_movs:
                         movimientos_requested = True
-                except Exception:
-                    pass
+                except Exception as exc:
+                    self.log_error(f"Error en fila {idx}: {exc}")
                 self.set_progress(completed, total)
 
         # Post processing involves creating DataFrame and saving Excel, which is safe in thread as it doesn't touch UI directly except via log_error
         self._post_process_excel(rows, movimientos_rows, movimientos_requested)
+        self.set_execution_summary(self.build_download_execution_summary("CCMA", rows, total_expected=total))
         self.log_info("Procesamiento masivo finalizado.")
 
     def _process_row_ccma(self, row, url, headers, movimientos_default, pdf_default, proxy_default):
@@ -421,6 +422,11 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
                     "response_json": json.dumps({"response_ccma": response_obj}, ensure_ascii=False),
                     "movimientos_solicitados": movimientos_flag,
                     "pdf_solicitado": pdf_flag,
+                    "descarga_esperada": pdf_flag,
+                    "descargas": downloads,
+                    "errores_descarga": "; ".join(errors) if errors else None,
+                    "errores_postproceso": json_error,
+                    "success": True,
                     "error": None,
                 }
                 movimientos_list = response_obj.get("movimientos")
@@ -443,6 +449,11 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
                     "pdf_url_minio": None,
                     "response_json": json.dumps(data, ensure_ascii=False),
                     "pdf_solicitado": pdf_flag,
+                    "descarga_esperada": pdf_flag,
+                    "descargas": downloads,
+                    "errores_descarga": "; ".join(errors) if errors else None,
+                    "errores_postproceso": json_error,
+                    "success": True,
                     "error": None,
                 }
         else:
@@ -453,6 +464,11 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
                 "pdf_url_minio": None,
                 "response_json": None,
                 "pdf_solicitado": pdf_flag,
+                "descarga_esperada": pdf_flag,
+                "descargas": downloads,
+                "errores_descarga": "; ".join(errors) if errors else None,
+                "errores_postproceso": json_error,
+                "success": False,
                 "error": json.dumps(resp, ensure_ascii=False),
             }
 

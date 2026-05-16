@@ -32,7 +32,13 @@ cp .env.example .env              # edita con tus credenciales
 URL=https://api-bots.mrbot.com.ar
 MAIL=tu_email@ejemplo.com
 API_KEY=tu_api_key
+NOTIFICACION_MESSAGEBOX=false
 ```
+
+Si `NOTIFICACION_MESSAGEBOX=true`, la GUI muestra un `messagebox` al finalizar los procesos masivos con descarga:
+- `info` si todas las descargas fueron correctas.
+- `warning` si hubo advertencias o fallas parciales.
+- `error` si todas fallaron.
 
 Para Webservices (token/sign automático vía API de certificados):
 ```env

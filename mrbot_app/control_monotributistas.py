@@ -65,7 +65,7 @@ def _parse_bool(valor: Any, default: bool = False) -> bool:
 def procesar_descarga_mc(
     row: pd.Series,
     log_fn: Optional[Callable[[str], None]] = None
-) -> None:
+) -> Dict[str, Any]:
     """
     Procesa la descarga de Mis Comprobantes para un contribuyente.
     Utiliza las variables de entorno para credenciales (como consulta_mc original).
@@ -86,7 +86,13 @@ def procesar_descarga_mc(
 
     if descarga_MC != 'si':
         _log_info(f"Saltando descarga MC para CUIT {cuit_representado}", log_fn)
-        return
+        return {
+            "cuit_representado": cuit_representado,
+            "success": True,
+            "descarga_esperada": False,
+            "descargas": 0,
+            "errores_descarga": None,
+        }
 
     descargar_emitidos = (descarga_MC_emitidos == 'si')
     descargar_recibidos = (descarga_MC_recibidos == 'si')
@@ -96,9 +102,18 @@ def procesar_descarga_mc(
 
     if not descargar_emitidos and not descargar_recibidos:
         _log_info(f"No hay tipos de comprobantes seleccionados para descargar (MC) para {cuit_representado}", log_fn)
-        return
+        return {
+            "cuit_representado": cuit_representado,
+            "success": True,
+            "descarga_esperada": False,
+            "descargas": 0,
+            "errores_descarga": None,
+        }
 
     _log_info(f"Procesando MC: {nombre_representado} ({cuit_representado}) - Periodo: {desde} a {hasta}", log_fn)
+
+    download_errors: List[str] = []
+    downloads = 0
 
     try:
         response = consulta_mc(
@@ -119,7 +134,14 @@ def procesar_descarga_mc(
         if not response.get("success", False):
             error_msg = response.get("error", response.get("detail", "Error desconocido"))
             _log_error(f"API Error MC: {error_msg}", log_fn)
-            return
+            return {
+                "cuit_representado": cuit_representado,
+                "success": False,
+                "message": str(error_msg),
+                "descarga_esperada": True,
+                "descargas": 0,
+                "errores_descarga": str(error_msg),
+            }
 
         # Determine download directory
         if not ubicacion_base:
@@ -164,6 +186,12 @@ def procesar_descarga_mc(
             # Adapt structure for downloader
             download_items = [{"url": item["url"], "destino": item["destino"]} for item in archivos_a_descargar]
             results = descargar_archivos_minio_concurrente(download_items, log_fn=log_fn)
+            downloads = sum(1 for item in results if item.get("success"))
+            download_errors.extend(
+                str(item.get("error") or "Error al descargar")
+                for item in results
+                if not item.get("success")
+            )
 
             for item in archivos_a_descargar:
                 if os.path.exists(item["destino"]):
@@ -172,9 +200,27 @@ def procesar_descarga_mc(
                         # Optionally remove zip
                         # os.remove(item["destino"])
                         pass
+                    else:
+                        download_errors.append(f"No se pudo extraer {os.path.basename(item['destino'])}")
+
+        return {
+            "cuit_representado": cuit_representado,
+            "success": True,
+            "descarga_esperada": True,
+            "descargas": downloads,
+            "errores_descarga": "; ".join(download_errors) if download_errors else None,
+        }
 
     except Exception as e:
         _log_error(f"Excepcion en proceso MC: {e}", log_fn)
+        return {
+            "cuit_representado": cuit_representado,
+            "success": False,
+            "message": str(e),
+            "descarga_esperada": True,
+            "descargas": downloads,
+            "errores_descarga": str(e),
+        }
 
 
 def _is_pdf_url(url: Any) -> bool:
@@ -220,7 +266,7 @@ def procesar_descarga_rcel(
     row: pd.Series,
     config: Tuple[str, str, str],
     log_fn: Optional[Callable[[str], None]] = None
-) -> None:
+) -> Dict[str, Any]:
     """
     Procesa la descarga de RCEL.
     config: (base_url, api_key, email)
@@ -243,7 +289,13 @@ def procesar_descarga_rcel(
 
     if descarga_RCEL != 'si':
         _log_info(f"Saltando descarga RCEL para CUIT {cuit_representado}", log_fn)
-        return
+        return {
+            "cuit_representado": cuit_representado,
+            "success": True,
+            "descarga_esperada": False,
+            "descargas": 0,
+            "errores_descarga": None,
+        }
 
     _log_info(f"Procesando RCEL: {nombre_rcel} ({cuit_representado}) - Periodo: {desde} a {hasta}", log_fn)
 
@@ -263,6 +315,10 @@ def procesar_descarga_rcel(
     if proxy_request is not None:
         payload["proxy_request"] = proxy_request
 
+    download_errors: List[str] = []
+    post_errors: List[str] = []
+    downloads = 0
+
     try:
         # Log request (redacted)
         safe_payload = payload.copy()
@@ -274,7 +330,14 @@ def procesar_descarga_rcel(
 
         if not response.get("success") and not data:
              _log_error(f"API Error RCEL: {response.get('message', 'Unknown error')}", log_fn)
-             return
+             return {
+                 "cuit_representado": cuit_representado,
+                 "success": False,
+                 "message": str(response.get('message', 'Unknown error')),
+                 "descarga_esperada": True,
+                 "descargas": 0,
+                 "errores_descarga": str(response.get('message', 'Unknown error')),
+             }
 
         # Determine download directory
         if not ubicacion_base:
@@ -288,7 +351,13 @@ def procesar_descarga_rcel(
 
         if not pdf_items:
             _log_info("No se encontraron comprobantes RCEL con PDF para descargar.", log_fn)
-            return
+            return {
+                "cuit_representado": cuit_representado,
+                "success": True,
+                "descarga_esperada": True,
+                "descargas": 0,
+                "errores_descarga": None,
+            }
 
         _log_info(f"Se encontraron {len(pdf_items)} comprobantes RCEL.", log_fn)
 
@@ -300,6 +369,12 @@ def procesar_descarga_rcel(
             download_items.append({"url": url, "destino": dest})
 
         results = descargar_archivos_minio_concurrente(download_items, log_fn=log_fn)
+        downloads = sum(1 for item in results if item.get("success"))
+        download_errors.extend(
+            str(item.get("error") or "Error al descargar")
+            for item in results
+            if not item.get("success")
+        )
 
         # Save JSON metadata for each downloaded file
         saved_jsons = 0
@@ -317,11 +392,29 @@ def procesar_descarga_rcel(
                         saved_jsons += 1
                     except Exception as e:
                         _log_error(f"Error guardando JSON {json_name}: {e}", log_fn)
+                        post_errors.append(str(e))
 
         _log_info(f"Descargas RCEL completadas: {len(results)}. JSONs guardados: {saved_jsons}", log_fn)
+        return {
+            "cuit_representado": cuit_representado,
+            "success": True,
+            "descarga_esperada": True,
+            "descargas": downloads,
+            "errores_descarga": "; ".join(download_errors) if download_errors else None,
+            "errores_postproceso": "; ".join(post_errors) if post_errors else None,
+        }
 
     except Exception as e:
         _log_error(f"Excepcion en proceso RCEL: {e}", log_fn)
+        return {
+            "cuit_representado": cuit_representado,
+            "success": False,
+            "message": str(e),
+            "descarga_esperada": True,
+            "descargas": downloads,
+            "errores_descarga": str(e),
+            "errores_postproceso": "; ".join(post_errors) if post_errors else None,
+        }
 
 def leer_archivos_csv_batch(archivos_mc: List[str], log_fn: Optional[Callable[[str], None]] = None) -> pd.DataFrame:
     dataframes = []

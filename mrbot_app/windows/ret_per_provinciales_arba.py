@@ -12,6 +12,7 @@ from mrbot_app.config import get_max_workers
 from mrbot_app.ret_per_provinciales import consulta_arba, FALLBACK_BASE_DIR
 from mrbot_app.helpers import (
     build_headers,
+    df_preview,
     ensure_trailing_slash,
     safe_get,
     parse_bool_cell,
@@ -152,13 +153,14 @@ class RetPerArbaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             "proxy_request": bool(self.proxy_var.get()),
         }
 
-    def _process_single_response(self, response: Dict[str, Any], download_root: str) -> List[str]:
+    def _process_single_response(self, response: Dict[str, Any], download_root: str) -> tuple[int, List[str]]:
+        downloads_total = 0
         errors = []
         success, error_text = self._get_success_and_error(response)
         if not success:
             msg = error_text or "Error desconocido"
             self.log_error(f"Error en API: {msg}")
-            return [msg]
+            return 0, [msg]
 
         archivos = self._extract_archivos(response)
         for item in archivos:
@@ -167,6 +169,7 @@ class RetPerArbaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             os.makedirs(download_root, exist_ok=True)
             link_obj = {"url": url, "filename": item["archivo"]}
             downloads, errs = self._download_links_direct([link_obj], download_root)
+            downloads_total += downloads
             if downloads:
                 self.log_info(f"{item['tipo']} descargado en: {download_root}")
                 zip_path = os.path.join(download_root, item["archivo"])
@@ -176,17 +179,20 @@ class RetPerArbaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
                     if extracted:
                         self.log_info(f"Descomprimido: {os.path.basename(extracted)}")
                     else:
-                        self.log_info(f"(sin archivo para descomprimir o ya extraido)")
+                        warning = "(sin archivo para descomprimir o ya extraido)"
+                        self.log_warning(warning)
+                        errors.append(warning)
             errors.extend(errs)
-        return errors
+        return downloads_total, errors
 
-    def _process_response_excel(self, response: Dict[str, Any], ubicacion: str, fallback_root: str) -> List[str]:
+    def _process_response_excel(self, response: Dict[str, Any], ubicacion: str, fallback_root: str) -> tuple[int, List[str]]:
+        downloads_total = 0
         errors = []
         success, error_text = self._get_success_and_error(response)
         if not success:
             msg = error_text or "Error desconocido"
             self.log_error(f"Error en API: {msg}")
-            return [msg]
+            return 0, [msg]
 
         archivos = self._extract_archivos(response)
         target_dir = ubicacion if ubicacion else fallback_root
@@ -203,6 +209,7 @@ class RetPerArbaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             final_filename = get_unique_filename(target_dir, filename)
             link_obj = {"url": url, "filename": final_filename}
             downloads, errs = self._download_links_direct([link_obj], target_dir)
+            downloads_total += downloads
             if errs:
                 errors.extend(errs)
             if downloads:
@@ -213,7 +220,11 @@ class RetPerArbaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
                     extracted = unzip_and_rename(full_path, stem)
                     if extracted:
                         self.log_info(f"Descomprimido: {os.path.basename(extracted)}")
-        return errors
+                    else:
+                        warning = f"No se pudo descomprimir/renombrar {full_path}"
+                        self.log_warning(warning)
+                        errors.append(warning)
+        return downloads_total, errors
 
     def _download_links_direct(self, links: List[Dict[str, str]], dest_dir: str) -> tuple[int, List[str]]:
         from mrbot_app.windows.minio_helpers import download_links
@@ -267,6 +278,7 @@ class RetPerArbaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         self.run_in_thread(self._worker_excel, df_copy, default_proxy)
 
     def _worker_excel(self, df: pd.DataFrame, default_proxy: bool) -> None:
+        rows: List[Dict[str, Any]] = []
         total = len(df)
         self.set_progress(0, total)
         max_workers = get_max_workers()
@@ -287,15 +299,19 @@ class RetPerArbaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
                     executor.shutdown(wait=False, cancel_futures=True)
                     break
                 try:
-                    future.result()
-                except Exception:
-                    pass
+                    result = future.result()
+                    if result:
+                        rows.append(result)
+                except Exception as exc:
+                    self.log_error(f"Error en fila {completed}: {exc}")
                 self.set_progress(completed, total)
+        self.set_preview(self.preview, df_preview(pd.DataFrame(rows), rows=min(20, len(rows))))
+        self.set_execution_summary(self.build_download_execution_summary("Ret-Per ARBA", rows, total_expected=total))
         self.log_info("Procesamiento masivo finalizado.")
 
-    def _process_row(self, row, default_proxy: bool) -> None:
+    def _process_row(self, row, default_proxy: bool) -> Optional[Dict[str, Any]]:
         if self._abort_event.is_set():
-            return
+            return None
         cuit = str(row.get("cuit", "")).strip()
         clave = str(row.get("clave", "") or row.get("clave_representante", "")).strip()
         periodo = str(row.get("periodo", "")).strip()
@@ -329,4 +345,13 @@ class RetPerArbaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             )
             if response.get("success", False):
                 break
-        self._process_response_excel(response, ubicacion, fallback_dir)
+        downloads, errors = self._process_response_excel(response, ubicacion, fallback_dir)
+        success, error_text = self._get_success_and_error(response)
+        return {
+            "cuit_representado": cuit,
+            "success": success,
+            "message": error_text or None,
+            "descarga_esperada": True,
+            "descargas": downloads,
+            "errores_descarga": "; ".join(errors) if errors else None,
+        }
