@@ -49,12 +49,33 @@ class ApocrifosWindow(BaseWindow, ExcelHandlerMixin):
 
         self.progress_frame = self.add_progress_bar(container, label="Progreso")
 
+    @staticmethod
+    def _es_cuit_valido(cuit: str) -> bool:
+        digitos = "".join(ch for ch in cuit if ch.isdigit())
+        if len(digitos) != 11:
+            return False
+        pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2]
+        suma = sum(int(digitos[i]) * pesos[i] for i in range(10))
+        resto = 11 - (suma % 11)
+        if resto == 11:
+            resto = 0
+        elif resto == 10:
+            return False
+        return resto == int(digitos[10])
+
     def consulta_individual(self) -> None:
         base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
         cuit = self.cuit_var.get().strip()
-        url = ensure_trailing_slash(base_url) + f"api/v1/apoc/consulta/{cuit}"
 
+        if not self._es_cuit_valido(cuit):
+            self.set_preview(self.result_box, json.dumps(
+                {"error": f"CUIT '{cuit}' inválido (no pasa dígito verificador)"},
+                indent=2, ensure_ascii=False
+            ))
+            return
+
+        url = ensure_trailing_slash(base_url) + f"api/v1/apoc/consulta/{cuit}"
         self.run_in_thread(self._worker_individual, url, headers)
 
     def _worker_individual(self, url, headers):
@@ -109,13 +130,32 @@ class ApocrifosWindow(BaseWindow, ExcelHandlerMixin):
                 self.set_progress(completed, total)
 
         out_df = pd.DataFrame(rows)
-        self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))
+        out_path = os.path.join("descargas", "apocrifo", "ReporteApocrifos.xlsx")
+        try:
+            os.makedirs(os.path.join("descargas", "apocrifo"), exist_ok=True)
+            with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
+                out_df.to_excel(writer, index=False, sheet_name="Apocrifos")
+        except Exception as exc:
+            self.log_error(f"Error guardando ReporteApocrifos.xlsx: {exc}")
+        else:
+            self.log_info(f"Reporte generado: {out_path}")
+        preview_text = df_preview(out_df, rows=min(20, len(out_df)))
+        preview_text += f"\n\nExportado: {out_path}"
+        self.set_preview(self.result_box, preview_text)
 
     def _process_row_apocrifos(self, row, base_url, headers):
         if self._abort_event.is_set():
             return None
 
         cuit = str(row.get("cuit", "")).strip()
+        if not self._es_cuit_valido(cuit):
+            return {
+                "cuit": cuit,
+                "http_status": None,
+                "apoc": None,
+                "message": "CUIT inválido (no pasa dígito verificador)",
+            }
+
         url = ensure_trailing_slash(base_url) + f"api/v1/apoc/consulta/{cuit}"
         resp = safe_get(url, headers)
         data = resp.get("data", {})
