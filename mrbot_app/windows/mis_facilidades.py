@@ -42,14 +42,17 @@ class MisFacilidadesWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         ttk.Label(inputs, text="Clave").grid(row=1, column=0, sticky="w", padx=4, pady=2)
         ttk.Label(inputs, text="CUIT representado").grid(row=2, column=0, sticky="w", padx=4, pady=2)
         ttk.Label(inputs, text="Denominacion").grid(row=3, column=0, sticky="w", padx=4, pady=2)
+        ttk.Label(inputs, text="Exclusion situacion (sep: , ; |)").grid(row=4, column=0, sticky="w", padx=4, pady=2)
         self.cuit_login_var = tk.StringVar()
         self.clave_var = tk.StringVar()
         self.cuit_repr_var = tk.StringVar()
         self.denominacion_var = tk.StringVar()
+        self.exclusion_situacion_var = tk.StringVar()
         ttk.Entry(inputs, textvariable=self.cuit_login_var, width=25).grid(row=0, column=1, padx=4, pady=2, sticky="ew")
         ttk.Entry(inputs, textvariable=self.clave_var, width=25, show="*").grid(row=1, column=1, padx=4, pady=2, sticky="ew")
         ttk.Entry(inputs, textvariable=self.cuit_repr_var, width=25).grid(row=2, column=1, padx=4, pady=2, sticky="ew")
         ttk.Entry(inputs, textvariable=self.denominacion_var, width=25).grid(row=3, column=1, padx=4, pady=2, sticky="ew")
+        ttk.Entry(inputs, textvariable=self.exclusion_situacion_var, width=25).grid(row=4, column=1, padx=4, pady=2, sticky="ew")
         inputs.columnconfigure(1, weight=1)
 
         opts = ttk.Frame(container)
@@ -92,6 +95,14 @@ class MisFacilidadesWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
     def _optional_value(self, value: str) -> Optional[str]:
         clean = (value or "").strip()
         return clean if clean else None
+
+    def _parse_lista_exclusion(self, value: str) -> Optional[list[str]]:
+        clean = (value or "").strip()
+        if not clean:
+            return None
+        clean = clean.replace(";", ",").replace("|", ",")
+        items = [item.strip() for item in clean.split(",") if item.strip()]
+        return items if items else None
 
     def _extract_api_error(self, data: Any) -> Optional[str]:
         if not isinstance(data, dict):
@@ -143,11 +154,13 @@ class MisFacilidadesWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
         cuit_repr = self._optional_value(self.cuit_repr_var.get())
+        exclusion_situacion = self._parse_lista_exclusion(self.exclusion_situacion_var.get())
         payload = {
             "cuit_login": self.cuit_login_var.get().strip(),
             "clave": self.clave_var.get(),
             "cuit_representado": cuit_repr,
             "denominacion": self._optional_value(self.denominacion_var.get()),
+            "lista_exclusion_situacion": exclusion_situacion,
             "carga_minio": True,
             "proxy_request": bool(self.proxy_var.get()),
         }
@@ -265,11 +278,14 @@ class MisFacilidadesWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         if "proxy_request" in row.index:
             proxy_request = parse_bool_cell(row.get("proxy_request"), default=default_proxy)
         self.log_separator(cuit_repr or cuit_login)
+        exclusion_situacion_raw = str(row.get("lista_exclusion_situacion", "")).strip()
+        exclusion_situacion = self._parse_lista_exclusion(exclusion_situacion_raw) if exclusion_situacion_raw else None
         payload = {
             "cuit_login": cuit_login,
             "clave": str(row.get("clave", "")),
             "cuit_representado": cuit_repr,
             "denominacion": self._optional_value(str(row.get("denominacion", ""))),
+            "lista_exclusion_situacion": exclusion_situacion,
             "carga_minio": True,
         }
         if proxy_request is not None:

@@ -179,6 +179,7 @@ def test_mis_facilidades_descarga() -> None:
         "clave": TEST_CLAVE_REP_3,
         "cuit_representado": TEST_CUIT_REPRESENTADO_3,
         "denominacion": TEST_DENOMINACION_3,
+        "lista_exclusion_situacion": ["Vigente", "Plan Cancelado"],
         "carga_minio": True,
         "proxy_request": False,
     }
