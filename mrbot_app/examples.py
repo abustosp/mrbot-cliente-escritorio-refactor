@@ -598,6 +598,20 @@ def ensure_example_excels() -> Dict[str, str]:
                 },
             ]
         ),
+        "facturometro.xlsx": pd.DataFrame(
+            [
+                {
+                    "procesar": "SI",
+                    "cuit_login": "20374730429",
+                    "clave": "clave_demo",
+                },
+                {
+                    "procesar": "NO",
+                    "cuit_login": "20111111111",
+                    "clave": "clave_no",
+                },
+            ]
+        ),
         "control_monotributistas.xlsx": pd.DataFrame(
             [
                 {
@@ -669,6 +683,7 @@ def ensure_example_excels() -> Dict[str, str]:
             "aportes_en_linea.xlsx",
             "srt_alicuotas.xlsx",
             "control_monotributistas.xlsx",
+            "facturometro.xlsx",
             "bcra_central_deudores.xlsx",
             "bcra_cheques_denunciados.xlsx",
             "bcra_estadisticas_cambiarias.xlsx",

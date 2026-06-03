@@ -23,6 +23,7 @@ from mrbot_app.windows.srt_alicuotas import SrtAlicuotasWindow
 from mrbot_app.windows.usuario import UsuarioWindow
 from mrbot_app.windows.webservices import WebservicesWindow
 from mrbot_app.windows.control_monotributistas import ControlMonotributistasWindow
+from mrbot_app.windows.facturometro import FacturometroWindow
 
 __all__ = [
     "ApocrifosWindow",
@@ -50,4 +51,5 @@ __all__ = [
     "UsuarioWindow",
     "WebservicesWindow",
     "ControlMonotributistasWindow",
+    "FacturometroWindow",
 ]

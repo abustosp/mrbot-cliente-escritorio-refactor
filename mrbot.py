@@ -27,6 +27,7 @@ from mrbot_app.windows import (
     SrtAlicuotasWindow,
     WebservicesWindow,
     ControlMonotributistasWindow,
+    FacturometroWindow,
     UsuarioWindow,
     RetPerProvincialesWindow,
 )
@@ -160,8 +161,12 @@ class MainMenu(tk.Tk):
             row=7, column=2, columnspan=2, padx=4, pady=4, sticky="nsew"
         )
 
+        ttk.Button(btns, text="Facturómetro", width=btn_width, command=self.open_facturometro).grid(
+            row=8, column=0, columnspan=2, padx=4, pady=4, sticky="nsew"
+        )
+
         btns.columnconfigure((0, 1, 2, 3), weight=1, uniform="menu")
-        for r in range(8):
+        for r in range(9):
             btns.rowconfigure(r, weight=1)
 
     def current_config(self) -> tuple[str, str, str]:
@@ -269,6 +274,9 @@ class MainMenu(tk.Tk):
 
     def open_control_monotributistas(self) -> None:
         ControlMonotributistasWindow(self, self.current_config, self.example_paths)
+
+    def open_facturometro(self) -> None:
+        FacturometroWindow(self, self.current_config, self.example_paths)
 
     def open_bcra(self) -> None:
         BcraWindow(self, self.example_paths)
