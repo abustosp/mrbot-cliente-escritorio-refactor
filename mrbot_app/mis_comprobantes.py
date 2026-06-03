@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+import re
 import zipfile
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
@@ -11,7 +12,7 @@ from dotenv import load_dotenv
 
 from mrbot_app.consulta import descargar_archivos_minio_concurrente
 from mrbot_app.config import get_notificacion_messagebox
-from mrbot_app.helpers import format_date_str
+from mrbot_app.helpers import format_date_str, get_unique_filename
 
 
 load_dotenv(".env", override=True)
@@ -65,6 +66,272 @@ def _sanitize_path_fragment(text: str, fallback: str = "descarga") -> str:
     clean = "".join(c for c in str(text) if c.isalnum() or c in (" ", "-", "_")).strip()
     clean = clean.replace(" ", "_")
     return clean or fallback
+
+
+_MC_TIPOS_COMPROBANTE = {
+    "1": "1 - FACTURA A",
+    "2": "2 - NOTA DE DÉBITO A",
+    "3": "3 - NOTA DE CREDITO A",
+    "4": "4 - RECIBOS A",
+    "5": "5 - NOTA DE VENTA AL CONTADO A",
+    "6": "6 - FACTURA B",
+    "7": "7 - NOTA DE DÉBITO B",
+    "8": "8 - NOTA DE CREDITO B",
+    "9": "9 - RECIBOS B",
+    "10": "10 - NOTA DE VENTA AL CONTADO B",
+    "11": "11 - FACTURA C",
+    "12": "12 - NOTA DE DÉBITO C",
+    "13": "13 - NOTA DE CREDITO C",
+    "15": "15 - RECIBOS C",
+    "16": "16 - NOTA DE VENTA AL CONTADO C",
+    "17": "17 - LIQUIDACION DE SERVICIOS PUBLICOS CLASE A",
+    "18": "18 - LIQUIDACION DE SERVICIOS PUBLICOS CLASE B",
+    "19": "19 - FACTURA DE EXPORTACION",
+    "20": "20 - NOTA DE DÉBITO POR OPERACIONES CON EL EXTERIOR",
+    "21": "21 - NOTA DE CREDITO POR OPERACIONES CON EL EXTERIOR",
+    "22": "22 - FACTURA - PERMISO EXPORTACION SIMPLIFICADO - DTO. 855/97",
+    "23": "23 - COMPROBANTES “A” DE COMPRA PRIMARIA PARA EL SECTOR PESQUERO MARITIMO",
+    "24": "24 - COMPROBANTES “A” DE CONSIGNACION PRIMARIA PARA EL SECTOR PESQUERO MARITIMO",
+    "25": "25 - COMPROBANTES “B” DE COMPRA PRIMARIA PARA EL SECTOR PESQUERO MARITIMO",
+    "26": "26 - COMPROBANTES “B” DE CONSIGNACION PRIMARIA PARA EL SECTOR PESQUERO MARITIMO",
+    "27": "27 - LIQUIDACION UNICA COMERCIAL IMPOSITIVA CLASE A",
+    "28": "28 - LIQUIDACION UNICA COMERCIAL IMPOSITIVA CLASE B",
+    "29": "29 - LIQUIDACION UNICA COMERCIAL IMPOSITIVA CLASE C",
+    "30": "30 - COMPROBANTES DE COMPRA DE BIENES USADOS",
+    "31": "31 - MANDATO - CONSIGNACION",
+    "32": "32 - COMPROBANTES PARA RECICLAR MATERIALES",
+    "33": "33 - LIQUIDACION PRIMARIA DE GRANOS",
+    "34": "34 - COMPROBANTES A DEL APARTADO A INCISO F) R.G. N° 1415",
+    "35": "35 - COMPROBANTES B DEL ANEXO I, APARTADO A, INC. F), R.G. N° 1415",
+    "36": "36 - COMPROBANTES C DEL Anexo I, Apartado A, INC. F), R.G. N° 1415",
+    "37": "37 - NOTA DE DÉBITO O DOCUMENTO EQUIVALENTE QUE CUMPLAN CON LA R.G. N° 1415",
+    "38": "38 - NOTA DE CRÉDITO O DOCUMENTO EQUIVALENTE QUE CUMPLAN CON LA R.G. N° 1415",
+    "39": "39 - OTROS COMPROBANTES A QUE CUMPLEN CON LA R G 1415",
+    "40": "40 - OTROS COMPROBANTES B QUE CUMPLAN CON LA R.G. N° 1415",
+    "41": "41 - OTROS COMPROBANTES C QUE CUMPLAN CON LA R.G. N° 1415",
+    "43": "43 - NOTA DE CRÉDITO LIQUIDACIÓN UNICA COMERCIAL IMPOSITIVA CLASE B",
+    "44": "44 - NOTA DE CRÉDITO LIQUIDACIÓN UNICA COMERCIAL IMPOSITIVA CLASE C",
+    "45": "45 - NOTA DE DÉBITO LIQUIDACIÓN UNICA COMERCIAL IMPOSITIVA CLASE A",
+    "46": "46 - NOTA DE DÉBITO LIQUIDACIÓN UNICA COMERCIAL IMPOSITIVA CLASE B",
+    "47": "47 - NOTA DE DÉBITO LIQUIDACIÓN UNICA COMERCIAL IMPOSITIVA CLASE C",
+    "48": "48 - NOTA DE CRÉDITO LIQUIDACIÓN UNICA COMERCIAL IMPOSITIVA CLASE A",
+    "49": "49 - COMPROBANTES DE COMPRA DE BIENES NO REGISTRABLES A CONSUMIDORES FINALES",
+    "50": "50 - RECIBO FACTURA A RÉGIMEN DE FACTURA DE CRÉDITO",
+    "51": "51 - FACTURA M",
+    "52": "52 - NOTA DE DÉBITO M",
+    "53": "53 - NOTA DE CRÉDITO M",
+    "54": "54 - RECIBOS M",
+    "55": "55 - NOTA DE VENTA AL CONTADO M",
+    "56": "56 - COMPROBANTES M DEL ANEXO I APARTADO A INC F) R.G. N° 1415",
+    "57": "57 - OTROS COMPROBANTES M QUE CUMPLAN CON LA R.G. N° 1415",
+    "58": "58 - CUENTAS DE VENTA Y LIQUIDO PRODUCTO M",
+    "59": "59 - LIQUIDACIONES M",
+    "60": "60 - CUENTAS DE VENTA Y LIQUIDO PRODUCTO A",
+    "61": "61 - CUENTAS DE VENTA Y LIQUIDO PRODUCTO B",
+    "63": "63 - LIQUIDACIONES A",
+    "64": "64 - LIQUIDACIONES B",
+    "66": "66 - DESPACHO DE IMPORTACIÓN",
+    "68": "68 - LIQUIDACIÓN C",
+    "70": "70 - RECIBOS FACTURA DE CRÉDITO",
+    "80": "80 - INFORME DIARIO DE CIERRE (ZETA) - CONTROLADORES FISCALES",
+    "81": "81 - TIQUE FACTURA A",
+    "82": "82 - TIQUE FACTURA B",
+    "83": "83 - TIQUE",
+    "88": "88 - REMITO ELECTRÓNICO",
+    "89": "89 - RESUMEN DE DATOS",
+    "90": "90 - OTROS COMPROBANTES - DOCUMENTOS EXCEPTUADOS - NOTA DE CRÉDITO",
+    "91": "91 - REMITOS R",
+    "99": "99 - OTROS COMPROBANTES QUE NO CUMPLEN O ESTÁN EXCEPTUADOS DE LA R.G. 1415 Y SUS MODIF",
+    "110": "110 - TIQUE NOTA DE CRÉDITO",
+    "111": "111 - TIQUE FACTURA C",
+    "112": "112 - TIQUE NOTA DE CRÉDITO A",
+    "113": "113 - TIQUE NOTA DE CRÉDITO B",
+    "114": "114 - TIQUE NOTA DE CRÉDITO C",
+    "115": "115 - TIQUE NOTA DE DÉBITO A",
+    "116": "116 - TIQUE NOTA DE DÉBITO B",
+    "117": "117 - TIQUE NOTA DE DÉBITO C",
+    "118": "118 - TIQUE FACTURA M",
+    "119": "119 - TIQUE NOTA DE CRÉDITO M",
+    "120": "120 - TIQUE NOTA DE DÉBITO M",
+    "201": "201 - FACTURA DE CRÉDITO ELECTRÓNICA MiPyMEs (FCE) A",
+    "202": "202 - NOTA DE DÉBITO ELECTRÓNICA MiPyMEs (FCE) A",
+    "203": "203 - NOTA DE CRÉDITO ELECTRÓNICA MiPyMEs (FCE) A",
+    "206": "206 - FACTURA DE CRÉDITO ELECTRÓNICA MiPyMEs (FCE) B",
+    "207": "207 - NOTA DE DÉBITO ELECTRÓNICA MiPyMEs (FCE) B",
+    "208": "208 - NOTA DE CRÉDITO ELECTRÓNICA MiPyMEs (FCE) B",
+    "211": "211 - FACTURA DE CRÉDITO ELECTRÓNICA MiPyMEs (FCE) C",
+    "212": "212 - NOTA DE DÉBITO ELECTRÓNICA MiPyMEs (FCE) C",
+    "213": "213 - NOTA DE CRÉDITO ELECTRÓNICA MiPyMEs (FCE) C",
+    "331": "331 - LIQUIDACIÓN SECUNDARIA DE GRANOS",
+    "332": "332 - CERTIFICACIÓN ELECTRÓNICA (GRANOS)",
+    "995": "995 - REMITO ELECTRÓNICO CÁRNICO",
+}
+
+
+_MC_EMITIDOS_COLUMN_MAP = {
+    "Fecha de Emisión": "Fecha",
+    "Tipo de Comprobante": "Tipo",
+    "Punto de Venta": "Punto de Venta",
+    "Número Desde": "Número Desde",
+    "Número Hasta": "Número Hasta",
+    "Cód. Autorización": "Cód. Autorización",
+    "Tipo Doc. Receptor": "Tipo Doc. Receptor",
+    "Nro. Doc. Receptor": "Nro. Doc. Receptor",
+    "Denominación Receptor": "Denominación Receptor",
+    "Tipo Cambio": "Tipo Cambio",
+    "Moneda": "Moneda",
+    "Imp. Neto Gravado IVA 0%": "Neto Grav. IVA 0%",
+    "IVA 2,5%": "IVA 2,5%",
+    "Imp. Neto Gravado IVA 2,5%": "Neto Grav. IVA 2,5%",
+    "IVA 5%": "IVA 5%",
+    "Imp. Neto Gravado IVA 5%": "Neto Grav. IVA 5%",
+    "IVA 10,5%": "IVA 10,5%",
+    "Imp. Neto Gravado IVA 10,5%": "Neto Grav. IVA 10,5%",
+    "IVA 21%": "IVA 21%",
+    "Imp. Neto Gravado IVA 21%": "Neto Grav. IVA 21%",
+    "IVA 27%": "IVA 27%",
+    "Imp. Neto Gravado IVA 27%": "Neto Grav. IVA 27%",
+    "Imp. Neto Gravado Total": "Neto Gravado Total",
+    "Imp. Neto No Gravado": "Neto No Gravado",
+    "Imp. Op. Exentas": "Op. Exentas",
+    "Otros Tributos": "Otros Tributos",
+    "Total IVA": "Total IVA",
+    "Imp. Total": "Imp. Total",
+}
+
+
+_MC_RECIBIDOS_COLUMN_MAP = {
+    "Fecha de Emisión": "Fecha",
+    "Tipo de Comprobante": "Tipo",
+    "Punto de Venta": "Punto de Venta",
+    "Número Desde": "Número Desde",
+    "Número Hasta": "Número Hasta",
+    "Cód. Autorización": "Cód. Autorización",
+    "Tipo Doc. Emisor": "Tipo Doc. Emisor",
+    "Nro. Doc. Emisor": "Nro. Doc. Emisor",
+    "Denominación Emisor": "Denominación Emisor",
+    "Tipo Doc. Receptor": "Tipo Doc. Receptor",
+    "Nro. Doc. Receptor": "Nro. Doc. Receptor",
+    "Tipo Cambio": "Tipo Cambio",
+    "Moneda": "Moneda",
+    "Imp. Neto Gravado IVA 0%": "Neto Grav. IVA 0%",
+    "IVA 2,5%": "IVA 2,5%",
+    "Imp. Neto Gravado IVA 2,5%": "Neto Grav. IVA 2,5%",
+    "IVA 5%": "IVA 5%",
+    "Imp. Neto Gravado IVA 5%": "Neto Grav. IVA 5%",
+    "IVA 10,5%": "IVA 10,5%",
+    "Imp. Neto Gravado IVA 10,5%": "Neto Grav. IVA 10,5%",
+    "IVA 21%": "IVA 21%",
+    "Imp. Neto Gravado IVA 21%": "Neto Grav. IVA 21%",
+    "IVA 27%": "IVA 27%",
+    "Imp. Neto Gravado IVA 27%": "Neto Grav. IVA 27%",
+    "Imp. Neto Gravado Total": "Neto Gravado Total",
+    "Imp. Neto No Gravado": "Neto No Gravado",
+    "Imp. Op. Exentas": "Op. Exentas",
+    "Otros Tributos": "Otros Tributos",
+    "Total IVA": "Total IVA",
+    "Imp. Total": "Imp. Total",
+}
+
+
+def _read_mis_comprobantes_csv(csv_path: str) -> pd.DataFrame:
+    last_error: Optional[Exception] = None
+    for encoding in ("utf-8-sig", "utf-8", "cp1252"):
+        try:
+            return pd.read_csv(csv_path, sep=";", encoding=encoding, decimal=",")
+        except Exception as exc:
+            last_error = exc
+    raise ValueError(f"No se pudo leer el CSV '{csv_path}': {last_error}")
+
+
+def _format_tipo_comprobante_mc(value: Any) -> Any:
+    try:
+        if pd.isna(value):
+            return value
+    except Exception:
+        pass
+    text = str(value).strip()
+    if not text:
+        return text
+    if " - " in text and text.split(" - ", 1)[0].strip().isdigit():
+        return text
+    if text.endswith(".0") and text[:-2].isdigit():
+        text = text[:-2]
+    if text.isdigit():
+        text = str(int(text))
+    return _MC_TIPOS_COMPROBANTE.get(text, value)
+
+
+def _prepare_mis_comprobantes_dataframe(df: pd.DataFrame, column_map: Dict[str, str]) -> pd.DataFrame:
+    out = df.copy()
+    if "Fecha de Emisión" in out.columns:
+        original = out["Fecha de Emisión"]
+        parsed = pd.to_datetime(original, format="mixed", dayfirst=True, errors="coerce")
+        formatted = parsed.dt.strftime("%d/%m/%Y")
+        out["Fecha de Emisión"] = original.where(parsed.isna(), formatted)
+    if "Tipo de Comprobante" in out.columns:
+        out["Tipo de Comprobante"] = out["Tipo de Comprobante"].map(_format_tipo_comprobante_mc)
+    return out.rename(columns=column_map)
+
+
+def _infer_mis_comprobantes_tipo(csv_path: str, df: pd.DataFrame, tipo_hint: Optional[str] = None):
+    hints = " ".join([tipo_hint or "", os.path.basename(csv_path)]).lower()
+    normalized_columns = {str(col).strip().lower() for col in df.columns}
+    if "emitidos" in hints or "mce" in hints or "denominación receptor".lower() in normalized_columns:
+        return "Mis Comprobantes Emitidos", _MC_EMITIDOS_COLUMN_MAP
+    if "recibidos" in hints or "mcr" in hints or "denominación emisor".lower() in normalized_columns:
+        return "Mis Comprobantes Recibidos", _MC_RECIBIDOS_COLUMN_MAP
+    return "Mis Comprobantes", {}
+
+
+def _extract_cuit_from_filename(path: str) -> str:
+    match = re.search(r"\b\d{11}\b", os.path.basename(path))
+    return match.group(0) if match else ""
+
+
+def convertir_csv_mc_a_xlsx(
+    csv_path: str,
+    eliminar_csv: bool = False,
+    tipo_hint: Optional[str] = None,
+    log_fn: Optional[Callable[[str], None]] = None,
+    cuit_representado: Optional[str] = None,
+) -> str:
+    if not csv_path or not os.path.isfile(csv_path):
+        raise FileNotFoundError(f"No se encontró el CSV: {csv_path}")
+    if not csv_path.lower().endswith(".csv"):
+        raise ValueError(f"El archivo no es CSV: {csv_path}")
+
+    df = _read_mis_comprobantes_csv(csv_path)
+    tipo_label, column_map = _infer_mis_comprobantes_tipo(csv_path, df, tipo_hint=tipo_hint)
+    df = _prepare_mis_comprobantes_dataframe(df, column_map)
+
+    directory = os.path.dirname(csv_path) or "."
+    xlsx_filename = get_unique_filename(directory, os.path.splitext(os.path.basename(csv_path))[0] + ".xlsx")
+    xlsx_path = os.path.join(directory, xlsx_filename)
+
+    df.to_excel(xlsx_path, index=False, sheet_name="Sheet1")
+
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(xlsx_path)
+    worksheet = workbook.active
+    worksheet.insert_rows(1)
+    cuit = cuit_representado or _extract_cuit_from_filename(csv_path) or ""
+    worksheet["A1"] = f"{tipo_label} - CUIT {cuit}" if cuit else tipo_label
+
+    for column_cells in worksheet.columns:
+        max_length = max(len(str(cell.value or "")) for cell in column_cells)
+        worksheet.column_dimensions[column_cells[0].column_letter].width = min(max_length + 2, 60)
+
+    workbook.save(xlsx_path)
+    workbook.close()
+    _log_info(f"XLSX generado: {xlsx_path}", log_fn)
+
+    if eliminar_csv:
+        os.remove(csv_path)
+        _log_info(f"CSV eliminado: {csv_path}", log_fn)
+
+    return xlsx_path
 
 
 def _log_message(message: str, log_fn: Optional[Callable[[str], None]] = None) -> None:

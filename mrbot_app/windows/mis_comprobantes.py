@@ -5,11 +5,11 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 from urllib.parse import urlparse, unquote
 
 from mrbot_app.config import get_max_workers
-from mrbot_app.mis_comprobantes import consulta_mc
+from mrbot_app.mis_comprobantes import consulta_mc, convertir_csv_mc_a_xlsx
 from mrbot_app.helpers import (
     build_headers,
     df_preview,
@@ -26,6 +26,32 @@ from mrbot_app.windows.mixins import (
     DateRangeHandlerMixin,
     DownloadHandlerMixin
 )
+
+
+class ToolTip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip_window = None
+        widget.bind('<Enter>', self.enter)
+        widget.bind('<Leave>', self.leave)
+        widget.bind('<ButtonPress>', self.leave)
+
+    def enter(self, event=None):
+        x = event.x_root + 15
+        y = event.y_root + 15
+        self.tip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(tw, text=self.text, justify='left',
+                         background="#ffffe0", relief='solid', borderwidth=1,
+                         wraplength=300, font=("tahoma", "8", "normal"))
+        label.pack()
+
+    def leave(self, event=None):
+        if self.tip_window:
+            self.tip_window.destroy()
+            self.tip_window = None
 
 
 class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadHandlerMixin):
@@ -82,12 +108,20 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
         self.b64_var = tk.BooleanVar(value=False)
         self.minio_var = tk.BooleanVar(value=True)
         self.proxy_var = tk.BooleanVar(value=False)
+        self.convertir_xlsx_var = tk.BooleanVar(value=False)
+        self.reemplazar_csv_var = tk.BooleanVar(value=False)
 
         ttk.Checkbutton(opts, text="Descarga Emitidos", variable=self.emitidos_var).grid(row=0, column=0, padx=4, pady=2, sticky="w")
         ttk.Checkbutton(opts, text="Descarga Recibidos", variable=self.recibidos_var).grid(row=0, column=1, padx=4, pady=2, sticky="w")
         ttk.Checkbutton(opts, text="Archivos en Base64", variable=self.b64_var).grid(row=0, column=2, padx=4, pady=2, sticky="w")
         ttk.Checkbutton(opts, text="Carga MinIO", variable=self.minio_var).grid(row=0, column=3, padx=4, pady=2, sticky="w")
         ttk.Checkbutton(opts, text="proxy_request", variable=self.proxy_var).grid(row=0, column=4, padx=4, pady=2, sticky="w")
+        cb_convertir = ttk.Checkbutton(opts, text="Convertir a XLSX", variable=self.convertir_xlsx_var)
+        cb_convertir.grid(row=1, column=0, padx=4, pady=2, sticky="w")
+        ToolTip(cb_convertir, "Convierte automáticamente los CSV descargados a\nformato XLSX. Incluye formato de fecha, descripción\nde comprobante y fila superior con CUIT.")
+        cb_reemplazar = ttk.Checkbutton(opts, text="Reemplazar CSV por XLSX", variable=self.reemplazar_csv_var)
+        cb_reemplazar.grid(row=1, column=1, columnspan=2, padx=4, pady=2, sticky="w")
+        ToolTip(cb_reemplazar, "Convierte a XLSX y ELIMINA el CSV original.\nSi solo está desactivado, se conserva el CSV\njunto al XLSX generado.")
 
         # Download Path
         self.add_download_path_frame(container)
@@ -100,6 +134,7 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
         ttk.Button(btns, text="Ver ejemplo", command=lambda: self.abrir_ejemplo_key("mis_comprobantes.xlsx")).grid(row=1, column=0, padx=4, pady=2, sticky="ew")
         ttk.Button(btns, text="Previsualizar Excel", command=self.previsualizar_excel).grid(row=1, column=1, padx=4, pady=2, sticky="ew")
         ttk.Button(btns, text="Procesar Excel", command=self.procesar_excel).grid(row=1, column=2, padx=4, pady=2, sticky="ew")
+        ttk.Button(btns, text="Convertir CSV a XLSX", command=self.convertir_csvs_a_xlsx).grid(row=2, column=0, padx=4, pady=2, sticky="ew")
 
         btns.columnconfigure((0, 1, 2), weight=1)
 
@@ -120,6 +155,61 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
             return
         self.log_message(text)
 
+    def _debe_convertir_xlsx(self) -> bool:
+        return bool(self.convertir_xlsx_var.get() or self.reemplazar_csv_var.get())
+
+    def convertir_csvs_a_xlsx(self) -> None:
+        filenames = filedialog.askopenfilenames(
+            title="Seleccionar CSV de Mis Comprobantes",
+            filetypes=[("CSV", "*.csv"), ("Todos los archivos", "*.*")],
+        )
+        self.bring_to_front()
+        if not filenames:
+            return
+
+        reemplazar_csv = bool(self.reemplazar_csv_var.get())
+        archivos = list(filenames)
+        self.clear_logs()
+        self.log_start(
+            "Mis Comprobantes",
+            {"modo": "conversion_csv_xlsx", "archivos": len(archivos), "reemplazar_csv": reemplazar_csv},
+        )
+        self.run_in_thread(self._worker_convertir_csvs, archivos, reemplazar_csv)
+
+    def _worker_convertir_csvs(self, archivos: List[str], reemplazar_csv: bool) -> None:
+        total = len(archivos)
+        rows: List[Dict[str, Any]] = []
+        self.set_progress(0, total)
+
+        for idx, csv_path in enumerate(archivos, start=1):
+            if self._abort_event.is_set():
+                break
+            try:
+                xlsx_path = convertir_csv_mc_a_xlsx(
+                    csv_path,
+                    eliminar_csv=reemplazar_csv,
+                    log_fn=self.log_message,
+                )
+                rows.append({"success": True, "descargas": 1, "descarga_esperada": True, "archivo": xlsx_path})
+            except Exception as exc:
+                self.log_error(f"Error convirtiendo {csv_path}: {exc}")
+                rows.append(
+                    {
+                        "success": False,
+                        "descargas": 0,
+                        "descarga_esperada": True,
+                        "errores_descarga": str(exc),
+                    }
+                )
+            finally:
+                self.set_progress(idx, total)
+
+        self.set_execution_summary(
+            self.build_download_execution_summary("Conversión CSV a XLSX", rows, total_expected=total)
+        )
+        exitosos = sum(1 for row in rows if row.get("success"))
+        self.log_info(f"Conversión finalizada: {exitosos}/{total} archivo(s) convertido(s).")
+
     def show_requests(self) -> None:
         base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
@@ -134,7 +224,9 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
 
     def _process_single_response(self, response: Dict[str, Any], download_root: str,
                                  cuit_repr: str, nombre_repr: str,
-                                 descarga_emitidos: bool, descarga_recibidos: bool) -> List[str]:
+                                 descarga_emitidos: bool, descarga_recibidos: bool,
+                                 convertir_xlsx: bool = False,
+                                 reemplazar_csv: bool = False) -> List[str]:
         """
         Helper method to process the response dictionary for Individual Query (uses subfolders Emitidos/Recibidos).
         """
@@ -154,10 +246,38 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
                 emitidos_dir = os.path.join(download_root, "Emitidos")
                 os.makedirs(emitidos_dir, exist_ok=True)
 
-                link_obj = {"url": url_emitidos, "filename": "Emitidos.zip"}
+                filename_zip = get_unique_filename(emitidos_dir, "Emitidos.zip")
+                link_obj = {"url": url_emitidos, "filename": filename_zip}
                 downloads, errs = self._download_links_direct([link_obj], emitidos_dir)
                 if downloads:
-                     self.log_info(f"Emitidos descargado en: {emitidos_dir}")
+                    full_zip_path = os.path.join(emitidos_dir, filename_zip)
+                    self.log_info(f"Emitidos descargado en: {full_zip_path}")
+                    if convertir_xlsx or reemplazar_csv:
+                        final_stem = os.path.splitext(filename_zip)[0]
+                        extracted_path = unzip_and_rename(full_zip_path, final_stem)
+                        if extracted_path:
+                            self.log_info(f"Descomprimido: {os.path.basename(extracted_path)}")
+                            if extracted_path.lower().endswith(".csv"):
+                                try:
+                                    convertir_csv_mc_a_xlsx(
+                                        extracted_path,
+                                        eliminar_csv=reemplazar_csv,
+                                        tipo_hint="Emitidos",
+                                        log_fn=self.log_message,
+                                        cuit_representado=cuit_repr,
+                                    )
+                                except Exception as exc:
+                                    warning = f"No se pudo convertir {extracted_path} a XLSX: {exc}"
+                                    self.log_warning(warning)
+                                    errors.append(warning)
+                            else:
+                                warning = f"No se convirtió {extracted_path}: no es un CSV."
+                                self.log_warning(warning)
+                                errors.append(warning)
+                        else:
+                            warning = f"No se pudo descomprimir/renombrar {full_zip_path}."
+                            self.log_warning(warning)
+                            errors.append(warning)
                 errors.extend(errs)
             else:
                 self.log_info("No URL MinIO para Emitidos.")
@@ -170,10 +290,38 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
                 recibidos_dir = os.path.join(download_root, "Recibidos")
                 os.makedirs(recibidos_dir, exist_ok=True)
 
-                link_obj = {"url": url_recibidos, "filename": "Recibidos.zip"}
+                filename_zip = get_unique_filename(recibidos_dir, "Recibidos.zip")
+                link_obj = {"url": url_recibidos, "filename": filename_zip}
                 downloads, errs = self._download_links_direct([link_obj], recibidos_dir)
                 if downloads:
-                     self.log_info(f"Recibidos descargado en: {recibidos_dir}")
+                    full_zip_path = os.path.join(recibidos_dir, filename_zip)
+                    self.log_info(f"Recibidos descargado en: {full_zip_path}")
+                    if convertir_xlsx or reemplazar_csv:
+                        final_stem = os.path.splitext(filename_zip)[0]
+                        extracted_path = unzip_and_rename(full_zip_path, final_stem)
+                        if extracted_path:
+                            self.log_info(f"Descomprimido: {os.path.basename(extracted_path)}")
+                            if extracted_path.lower().endswith(".csv"):
+                                try:
+                                    convertir_csv_mc_a_xlsx(
+                                        extracted_path,
+                                        eliminar_csv=reemplazar_csv,
+                                        tipo_hint="Recibidos",
+                                        log_fn=self.log_message,
+                                        cuit_representado=cuit_repr,
+                                    )
+                                except Exception as exc:
+                                    warning = f"No se pudo convertir {extracted_path} a XLSX: {exc}"
+                                    self.log_warning(warning)
+                                    errors.append(warning)
+                            else:
+                                warning = f"No se convirtió {extracted_path}: no es un CSV."
+                                self.log_warning(warning)
+                                errors.append(warning)
+                        else:
+                            warning = f"No se pudo descomprimir/renombrar {full_zip_path}."
+                            self.log_warning(warning)
+                            errors.append(warning)
                 errors.extend(errs)
             else:
                 self.log_info("No URL MinIO para Recibidos.")
@@ -185,7 +333,9 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
                                 d_emitidos: bool, d_recibidos: bool,
                                 ub_emitidos: str, nom_emitidos: str,
                                 ub_recibidos: str, nom_recibidos: str,
-                                fallback_root: str) -> tuple[int, List[str]]:
+                                fallback_root: str,
+                                convertir_xlsx: bool = False,
+                                reemplazar_csv: bool = False) -> tuple[int, List[str]]:
         """
         Procesa la respuesta para Excel, usando ubicaciones y nombres custom si existen,
         y descomprimiendo el ZIP.
@@ -198,6 +348,7 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
             return 0, [str(error_msg)]
 
         def _handle_file(url_key: str, default_subdir: str, custom_path: str, custom_name: str, desc: str):
+            nonlocal downloads_total
             url = response.get(url_key)
             if not url:
                 self.log_info(f"No URL MinIO para {desc}.")
@@ -260,6 +411,24 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
                 extracted_path = unzip_and_rename(full_zip_path, final_stem)
                 if extracted_path:
                     self.log_info(f"Descomprimido: {os.path.basename(extracted_path)}")
+                    if convertir_xlsx or reemplazar_csv:
+                        if extracted_path.lower().endswith(".csv"):
+                            try:
+                                convertir_csv_mc_a_xlsx(
+                                    extracted_path,
+                                    eliminar_csv=reemplazar_csv,
+                                    tipo_hint=desc,
+                                    log_fn=self.log_message,
+                                    cuit_representado=cuit_repr,
+                                )
+                            except Exception as exc:
+                                warning = f"No se pudo convertir {extracted_path} a XLSX: {exc}"
+                                self.log_warning(warning)
+                                errors.append(warning)
+                        else:
+                            warning = f"No se convirtió {extracted_path}: no es un CSV."
+                            self.log_warning(warning)
+                            errors.append(warning)
                 else:
                     warning = f"No se pudo descomprimir/renombrar {full_zip_path} (quizás no contiene un único archivo o error zip)."
                     self.log_warning(warning)
@@ -291,6 +460,8 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
         carga_minio = self.minio_var.get()
         b64 = self.b64_var.get()
         proxy_request = self.proxy_var.get()
+        convertir_xlsx = self._debe_convertir_xlsx()
+        reemplazar_csv = bool(self.reemplazar_csv_var.get())
 
         target_dir = self.download_dir_var.get().strip()
 
@@ -299,7 +470,10 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
             return
 
         self.clear_logs()
-        self.log_start("Mis Comprobantes", {"modo": "individual"})
+        self.log_start(
+            "Mis Comprobantes",
+            {"modo": "individual", "convertir_xlsx": convertir_xlsx, "reemplazar_csv": reemplazar_csv},
+        )
 
         # Run worker
         self.run_in_thread(
@@ -307,11 +481,13 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
             cuit_repr or cuit_inicio or "sin_cuit",
             self._worker_individual,
             desde, hasta, cuit_inicio, nombre_repr, cuit_repr, clave,
-            descarga_emitidos, descarga_recibidos, carga_minio, b64, target_dir, proxy_request
+            descarga_emitidos, descarga_recibidos, carga_minio, b64, target_dir, proxy_request,
+            convertir_xlsx, reemplazar_csv
         )
 
     def _worker_individual(self, desde, hasta, cuit_inicio, nombre_repr, cuit_repr, clave,
-                           d_emitidos, d_recibidos, minio, b64, target_dir, proxy_request):
+                           d_emitidos, d_recibidos, minio, b64, target_dir, proxy_request,
+                           convertir_xlsx, reemplazar_csv):
 
         self.log_separator(f"{nombre_repr} ({cuit_repr})")
 
@@ -333,7 +509,16 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
             log_fn=self.log_message
         )
 
-        self._process_single_response(response, final_dir, cuit_repr, nombre_repr, d_emitidos, d_recibidos)
+        self._process_single_response(
+            response,
+            final_dir,
+            cuit_repr,
+            nombre_repr,
+            d_emitidos,
+            d_recibidos,
+            convertir_xlsx=convertir_xlsx,
+            reemplazar_csv=reemplazar_csv,
+        )
         self.log_info("Proceso individual finalizado.")
 
 
@@ -351,16 +536,34 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
         default_desde = self.desde_var.get().strip()
         default_hasta = self.hasta_var.get().strip()
         default_proxy = bool(self.proxy_var.get())
+        convertir_xlsx = self._debe_convertir_xlsx()
+        reemplazar_csv = bool(self.reemplazar_csv_var.get())
 
         # Copy for thread safety
         df_copy = df_to_process.copy()
 
         self.clear_logs()
-        self.log_start("Mis Comprobantes", {"modo": "masivo", "filas": len(df_copy)})
+        self.log_start(
+            "Mis Comprobantes",
+            {
+                "modo": "masivo",
+                "filas": len(df_copy),
+                "convertir_xlsx": convertir_xlsx,
+                "reemplazar_csv": reemplazar_csv,
+            },
+        )
 
-        self.run_in_thread(self._worker_excel, df_copy, default_desde, default_hasta, default_proxy)
+        self.run_in_thread(
+            self._worker_excel,
+            df_copy,
+            default_desde,
+            default_hasta,
+            default_proxy,
+            convertir_xlsx,
+            reemplazar_csv,
+        )
 
-    def _worker_excel(self, df, default_desde, default_hasta, default_proxy):
+    def _worker_excel(self, df, default_desde, default_hasta, default_proxy, convertir_xlsx, reemplazar_csv):
         rows: List[Dict[str, Any]] = []
         total = len(df)
         self.set_progress(0, total)
@@ -384,6 +587,8 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
                     default_desde,
                     default_hasta,
                     default_proxy,
+                    convertir_xlsx,
+                    reemplazar_csv,
                 ): idx
                 for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
@@ -406,11 +611,11 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
                 self.set_progress(completed, total)
 
         out_df = pd.DataFrame(rows)
-        self.set_preview(self.result_box, df_preview(out_df, rows=min(20, len(out_df))))
+        self.set_preview(getattr(self, "result_box", self.preview), df_preview(out_df, rows=min(20, len(out_df))))
         self.set_execution_summary(self.build_download_execution_summary("Mis Comprobantes", rows, total_expected=total))
         self.log_info("Procesamiento masivo finalizado.")
 
-    def _process_row_mc(self, row, default_desde, default_hasta, default_proxy):
+    def _process_row_mc(self, row, default_desde, default_hasta, default_proxy, convertir_xlsx, reemplazar_csv):
         if self._abort_event.is_set():
             return None
 
@@ -491,7 +696,9 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
             d_emitidos, d_recibidos,
             ub_emitidos, nom_emitidos,
             ub_recibidos, nom_recibidos,
-            fallback_dir
+            fallback_dir,
+            convertir_xlsx=convertir_xlsx,
+            reemplazar_csv=reemplazar_csv,
         )
         return {
             "cuit_representado": cuit_repr or cuit_inicio,
