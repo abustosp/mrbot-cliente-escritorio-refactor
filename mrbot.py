@@ -155,18 +155,17 @@ class MainMenu(tk.Tk):
         )
 
         ttk.Button(btns, text="Control Monotributistas", width=btn_width, command=self.open_control_monotributistas).grid(
-            row=7, column=0, columnspan=2, padx=4, pady=4, sticky="nsew"
+            row=7, column=0, padx=4, pady=4, sticky="nsew"
+        )
+        ttk.Button(btns, text="Facturómetro", width=btn_width, command=self.open_facturometro).grid(
+            row=7, column=1, padx=4, pady=4, sticky="nsew"
         )
         ttk.Button(btns, text="Consultas BCRA", width=btn_width, command=self.open_bcra).grid(
             row=7, column=2, columnspan=2, padx=4, pady=4, sticky="nsew"
         )
 
-        ttk.Button(btns, text="Facturómetro", width=btn_width, command=self.open_facturometro).grid(
-            row=8, column=0, columnspan=2, padx=4, pady=4, sticky="nsew"
-        )
-
         btns.columnconfigure((0, 1, 2, 3), weight=1, uniform="menu")
-        for r in range(9):
+        for r in range(8):
             btns.rowconfigure(r, weight=1)
 
     def current_config(self) -> tuple[str, str, str]:
