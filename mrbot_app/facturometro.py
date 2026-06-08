@@ -23,16 +23,23 @@ from mrbot_app.helpers import (
 MODULE_DIR = "facturometro"
 
 
+def _representado_dir(base_dir: str, cuit_login: str, cuit_representado: str) -> str:
+    path = os.path.join(base_dir, cuit_login, cuit_representado)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
 def consultar_facturometro(
     cuit_login: str,
     clave: str,
     config: tuple,
+    cuit_representado: str,
     log_fn: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, Any]:
     base_url, api_key, email = config
     url = ensure_trailing_slash(base_url) + "api/v1/facturometro/consulta"
     headers = build_headers(api_key, email)
-    payload = {"cuit_login": cuit_login, "clave": clave}
+    payload = {"cuit_login": cuit_login, "clave": clave, "cuit_representado": cuit_representado}
 
     if log_fn:
         safe = payload.copy()
@@ -46,6 +53,11 @@ def consultar_facturometro(
     if log_fn:
         log_fn(f"RESPONSE: HTTP {http_status} - {json.dumps(data, ensure_ascii=False, default=str)}")
 
+    result = {
+        "cuit_login": cuit_login,
+        "cuit_representado": cuit_representado,
+    }
+
     if http_status != 200:
         detail = data.get("detail", {})
         if isinstance(detail, dict):
@@ -56,8 +68,7 @@ def consultar_facturometro(
         else:
             msg = str(detail)
             error_code = ""
-        return {
-            "cuit_login": cuit_login,
+        result.update({
             "success": False,
             "http_status": http_status,
             "message": msg,
@@ -66,10 +77,10 @@ def consultar_facturometro(
             "tope_facturacion": None,
             "categoria": None,
             "screenshot_url": None,
-        }
+        })
+        return result
 
-    return {
-        "cuit_login": cuit_login,
+    result.update({
         "success": data.get("success", False),
         "http_status": http_status,
         "message": data.get("message", ""),
@@ -77,7 +88,8 @@ def consultar_facturometro(
         "tope_facturacion": data.get("tope_facturacion"),
         "categoria": data.get("categoria"),
         "screenshot_url": data.get("screenshot_url_minio"),
-    }
+    })
+    return result
 
 
 def guardar_resultado_json(
@@ -85,13 +97,13 @@ def guardar_resultado_json(
     base_dir: str,
     log_fn: Optional[Callable[[str], None]] = None,
 ) -> Optional[str]:
-    cuit = resultado["cuit_login"]
-    cuit_dir = os.path.join(base_dir, cuit)
-    os.makedirs(cuit_dir, exist_ok=True)
+    cuit_login = resultado["cuit_login"]
+    cuit_representado = resultado["cuit_representado"]
+    dir_path = _representado_dir(base_dir, cuit_login, cuit_representado)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"facturometro_{cuit}_{timestamp}.json"
-    path = os.path.join(cuit_dir, filename)
+    filename = f"facturometro_{cuit_representado}_{timestamp}.json"
+    path = os.path.join(dir_path, filename)
 
     try:
         with open(path, "w", encoding="utf-8") as f:
@@ -108,23 +120,23 @@ def guardar_resultado_json(
 def descargar_screenshot(
     screenshot_url: str,
     cuit_login: str,
+    cuit_representado: str,
     base_dir: str,
     log_fn: Optional[Callable[[str], None]] = None,
 ) -> Optional[str]:
     if not screenshot_url:
         return None
 
-    cuit_dir = os.path.join(base_dir, cuit_login)
-    os.makedirs(cuit_dir, exist_ok=True)
+    dir_path = _representado_dir(base_dir, cuit_login, cuit_representado)
 
     parsed = unquote(os.path.basename(urlparse(screenshot_url).path))
-    base_name = parsed or f"facturometro_{cuit_login}.png"
+    base_name = parsed or f"facturometro_{cuit_representado}.png"
     name_no_ext, ext = os.path.splitext(base_name)
     if not ext:
         ext = ".png"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"facturometro_{cuit_login}_{timestamp}{ext}"
-    path = os.path.join(cuit_dir, filename)
+    filename = f"facturometro_{cuit_representado}_{timestamp}{ext}"
+    path = os.path.join(dir_path, filename)
 
     res = descargar_archivo_minio(screenshot_url, path)
     if res.get("success"):
@@ -142,7 +154,7 @@ def generar_reporte_excel(
     output_path: str,
     log_fn: Optional[Callable[[str], None]] = None,
 ) -> None:
-    json_files = glob.glob(os.path.join(consulta_base_dir, "*", "facturometro_*.json"))
+    json_files = glob.glob(os.path.join(consulta_base_dir, "*", "*", "facturometro_*.json"))
     if not json_files:
         if log_fn:
             log_fn("No se encontraron archivos JSON para generar el reporte.")
@@ -169,7 +181,8 @@ def generar_reporte_excel(
     df = pd.DataFrame(rows)
 
     column_map = {
-        "cuit_login": "CUIT",
+        "cuit_login": "CUIT Login",
+        "cuit_representado": "CUIT Representado",
         "success": "Éxito",
         "http_status": "HTTP Status",
         "message": "Mensaje",

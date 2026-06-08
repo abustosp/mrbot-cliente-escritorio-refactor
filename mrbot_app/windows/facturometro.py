@@ -47,10 +47,13 @@ class FacturometroWindow(BaseWindow, ExcelHandlerMixin):
         inputs.pack(fill="x", pady=4)
         ttk.Label(inputs, text="CUIT login").grid(row=0, column=0, sticky="w", padx=4, pady=2)
         ttk.Label(inputs, text="Clave fiscal").grid(row=1, column=0, sticky="w", padx=4, pady=2)
+        ttk.Label(inputs, text="CUIT representado").grid(row=2, column=0, sticky="w", padx=4, pady=2)
         self.cuit_var = tk.StringVar()
         self.clave_var = tk.StringVar()
+        self.representado_var = tk.StringVar()
         ttk.Entry(inputs, textvariable=self.cuit_var, width=25).grid(row=0, column=1, padx=4, pady=2, sticky="ew")
         ttk.Entry(inputs, textvariable=self.clave_var, width=25, show="*").grid(row=1, column=1, padx=4, pady=2, sticky="ew")
+        ttk.Entry(inputs, textvariable=self.representado_var, width=25).grid(row=2, column=1, padx=4, pady=2, sticky="ew")
         inputs.columnconfigure(1, weight=1)
 
         btns = ttk.Frame(container)
@@ -95,18 +98,22 @@ class FacturometroWindow(BaseWindow, ExcelHandlerMixin):
     def consulta_individual(self) -> None:
         cuit = self.cuit_var.get().strip()
         clave = self.clave_var.get()
+        representado = self.representado_var.get().strip()
         if not cuit:
-            messagebox.showwarning("Advertencia", "Ingresa un CUIT")
+            messagebox.showwarning("Advertencia", "Ingresa un CUIT login")
+            return
+        if not representado:
+            messagebox.showwarning("Advertencia", "Ingresa un CUIT representado")
             return
 
         self.clear_logs()
-        self.log_start("Facturómetro", {"modo": "individual", "cuit": cuit})
-        self.run_in_thread(self._worker_individual, cuit, clave)
+        self.log_start("Facturómetro", {"modo": "individual", "cuit": cuit, "representado": representado})
+        self.run_in_thread(self._worker_individual, cuit, clave, representado)
 
-    def _worker_individual(self, cuit: str, clave: str) -> None:
+    def _worker_individual(self, cuit: str, clave: str, representado: str) -> None:
         config = self._get_config()
-        self.log_separator(cuit)
-        resultado = consultar_facturometro(cuit, clave, config, log_fn=self.append_log)
+        self.log_separator(f"{cuit} / {representado}")
+        resultado = consultar_facturometro(cuit, clave, config, cuit_representado=representado, log_fn=self.append_log)
 
         base_dir = self._downloads_dir()
 
@@ -115,7 +122,7 @@ class FacturometroWindow(BaseWindow, ExcelHandlerMixin):
         if resultado["success"]:
             url = resultado.get("screenshot_url")
             if url:
-                ss_path = descargar_screenshot(url, cuit, base_dir, log_fn=self.append_log)
+                ss_path = descargar_screenshot(url, cuit, representado, base_dir, log_fn=self.append_log)
                 resultado["screenshot_path"] = ss_path
 
         self._resultados.append(resultado)
@@ -132,6 +139,16 @@ class FacturometroWindow(BaseWindow, ExcelHandlerMixin):
         if df_to_process is None or df_to_process.empty:
             self.set_progress(0, 0)
             messagebox.showwarning("Sin filas a procesar", "No hay filas marcadas con procesar=SI.")
+            return
+
+        # Validate cuit_representado column exists and has values
+        if "cuit_representado" not in df_to_process.columns:
+            self.set_progress(0, 0)
+            messagebox.showerror("Error", "El Excel debe contener la columna 'cuit_representado'.")
+            return
+        if df_to_process["cuit_representado"].astype(str).str.strip().eq("").any():
+            self.set_progress(0, 0)
+            messagebox.showerror("Error", "Todas las filas deben tener un CUIT representado.")
             return
 
         config = self._get_config()
@@ -151,7 +168,7 @@ class FacturometroWindow(BaseWindow, ExcelHandlerMixin):
             futures = {
                 executor.submit(
                     self.run_with_log_block,
-                    str(row.get("cuit_login") or "").strip() or "sin_cuit",
+                    f"{str(row.get('cuit_login') or '').strip() or 'sin_cuit'}/{str(row.get('cuit_representado') or '').strip() or 'sin_representado'}",
                     self._process_row,
                     row,
                     config,
@@ -201,12 +218,16 @@ class FacturometroWindow(BaseWindow, ExcelHandlerMixin):
 
         cuit_login = str(row.get("cuit_login", "")).strip()
         clave = str(row.get("clave", ""))
+        cuit_representado = str(row.get("cuit_representado", "")).strip()
 
         if not cuit_login:
             self.log_warning("Fila sin CUIT login, saltando.")
             return None
+        if not cuit_representado:
+            self.log_warning("Fila sin CUIT representado, saltando.")
+            return None
 
-        resultado = consultar_facturometro(cuit_login, clave, config, log_fn=self.append_log)
+        resultado = consultar_facturometro(cuit_login, clave, config, cuit_representado=cuit_representado, log_fn=self.append_log)
 
         base_dir = self._downloads_dir()
         guardar_resultado_json(resultado, base_dir, log_fn=self.append_log)
@@ -214,7 +235,7 @@ class FacturometroWindow(BaseWindow, ExcelHandlerMixin):
         if resultado["success"]:
             url = resultado.get("screenshot_url")
             if url:
-                ss_path = descargar_screenshot(url, cuit_login, base_dir, log_fn=self.append_log)
+                ss_path = descargar_screenshot(url, cuit_login, cuit_representado, base_dir, log_fn=self.append_log)
                 resultado["screenshot_path"] = ss_path
 
         return resultado

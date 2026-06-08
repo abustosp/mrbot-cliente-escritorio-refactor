@@ -604,11 +604,13 @@ def ensure_example_excels() -> Dict[str, str]:
                     "procesar": "SI",
                     "cuit_login": "20374730429",
                     "clave": "clave_demo",
+                    "representado_cuit": "20374730429",
                 },
                 {
                     "procesar": "NO",
                     "cuit_login": "20111111111",
                     "clave": "clave_no",
+                    "representado_cuit": "20999999999",
                 },
             ]
         ),
