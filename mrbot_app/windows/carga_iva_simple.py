@@ -13,6 +13,7 @@ from mrbot_app.carga_iva_simple import (
     carga_iva_simple,
     mapear_archivos_por_nombre,
     validar_archivos,
+    validar_opciones_iva,
 )
 from mrbot_app.config import get_max_workers
 from mrbot_app.helpers import df_preview, parse_bool_cell
@@ -206,6 +207,24 @@ class CargaIvaSimpleWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             messagebox.showerror("Error", "Faltan datos obligatorios (CUIT y Clave).")
             return
 
+        errores = validar_opciones_iva(
+            operaciones_ng_o_e=payload.get("operaciones_ng_o_e", False),
+            prorrateo_global=payload.get("prorrateo_global", False),
+            prorrateo_asignacion_directa=payload.get("prorrateo_asignacion_directa", False),
+            prorrateo_ambos=payload.get("prorrateo_ambos", False),
+            importacion_definitiva_bienes=payload.get("importacion_definitiva_bienes", False),
+            importacion_servicios=payload.get("importacion_servicios", False),
+            regimen_turiva=payload.get("regimen_turiva", False),
+            bienes_usados=payload.get("bienes_usados", False),
+            ninguna_anteriores=payload.get("ninguna_anteriores", True),
+        )
+        if errores:
+            messagebox.showerror(
+                "Validacion de opciones IVA",
+                "Se encontraron los siguientes errores:\n\n- " + "\n- ".join(errores),
+            )
+            return
+
         self.clear_logs()
         label = payload["cuit_representado"] or payload["cuit_representante"]
         self.log_start("Carga IVA Simple", {"modo": "individual", "cuit": label})
@@ -377,6 +396,30 @@ class CargaIvaSimpleWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         for col in CAMPOS_BOOLEAN:
             ops[col] = _parse_bool_celda(row.get(col))
         ops["ninguna_anteriores"] = _resolver_ninguna_anteriores(row)
+
+        errores_ops = validar_opciones_iva(
+            operaciones_ng_o_e=ops["operaciones_ng_o_e"],
+            prorrateo_global=ops["prorrateo_global"],
+            prorrateo_asignacion_directa=ops["prorrateo_asignacion_directa"],
+            prorrateo_ambos=ops["prorrateo_ambos"],
+            importacion_definitiva_bienes=ops["importacion_definitiva_bienes"],
+            importacion_servicios=ops["importacion_servicios"],
+            regimen_turiva=ops["regimen_turiva"],
+            bienes_usados=ops["bienes_usados"],
+            ninguna_anteriores=ops["ninguna_anteriores"],
+        )
+        if errores_ops:
+            for err in errores_ops:
+                self.log_error(err)
+            return {
+                "cuit_representado": cuit_representado,
+                "denominacion": denominacion,
+                "periodo": periodo,
+                "success": False,
+                "http_status": None,
+                "message": "; ".join(errores_ops),
+                "archivos_cargados": 0,
+            }
 
         archivos = _extraer_paths_fila(row)
 

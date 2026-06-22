@@ -195,3 +195,47 @@ def validar_archivos(file_paths: List[str], log_fn: Optional[Callable[[str], Non
             missing.append(f)
             _log_error(f"Archivo no encontrado: {f}", log_fn)
     return missing
+
+
+def validar_opciones_iva(
+    operaciones_ng_o_e: bool,
+    prorrateo_global: bool,
+    prorrateo_asignacion_directa: bool,
+    prorrateo_ambos: bool,
+    importacion_definitiva_bienes: bool,
+    importacion_servicios: bool,
+    regimen_turiva: bool,
+    bienes_usados: bool,
+    ninguna_anteriores: bool,
+) -> List[str]:
+    errores: List[str] = []
+
+    if operaciones_ng_o_e:
+        if not prorrateo_global and not prorrateo_asignacion_directa:
+            errores.append(
+                "Si 'Op. No Grav. o Exentas' esta activa, debe seleccionar "
+                "'Prorrateo Global' o 'Prorrateo Asignacion Directa' (una sola)."
+            )
+        elif prorrateo_global and prorrateo_asignacion_directa:
+            errores.append(
+                "Si 'Op. No Grav. o Exentas' esta activa, no puede seleccionar "
+                "ambos: 'Prorrateo Global' y 'Prorrateo Asignacion Directa'."
+            )
+
+    opciones_activas = any([
+        operaciones_ng_o_e,
+        prorrateo_global,
+        prorrateo_asignacion_directa,
+        prorrateo_ambos,
+        importacion_definitiva_bienes,
+        importacion_servicios,
+        regimen_turiva,
+        bienes_usados,
+    ])
+    if ninguna_anteriores and opciones_activas:
+        errores.append(
+            "'Ninguna de las anteriores' no puede estar activa si alguna de las "
+            "opciones de IVA lo esta."
+        )
+
+    return errores
