@@ -9,6 +9,7 @@ from mrbot_app.files import open_with_default_app
 from mrbot_app.windows import (
     ApocrifosWindow,
     AportesEnLineaWindow,
+    CargaIvaSimpleWindow,
     BcraWindow,
     CcmaWindow,
     ConsultaCuitWindow,
@@ -103,6 +104,9 @@ class MainMenu(tk.Tk):
         ttk.Button(btns, text="Portal IVA", width=btn_width, command=self.open_portal_iva).grid(
             row=1, column=3, padx=4, pady=4, sticky="nsew"
         )
+        ttk.Button(btns, text="Carga IVA Simple", width=btn_width, command=self.open_carga_iva_simple).grid(
+            row=8, column=0, columnspan=4, padx=4, pady=4, sticky="nsew"
+        )
 
         ttk.Button(btns, text="RCEL", width=btn_width, command=self.open_rcel).grid(
             row=2, column=0, padx=4, pady=4, sticky="nsew"
@@ -165,7 +169,7 @@ class MainMenu(tk.Tk):
         )
 
         btns.columnconfigure((0, 1, 2, 3), weight=1, uniform="menu")
-        for r in range(8):
+        for r in range(9):
             btns.rowconfigure(r, weight=1)
 
     def current_config(self) -> tuple[str, str, str]:
@@ -288,6 +292,9 @@ class MainMenu(tk.Tk):
 
     def open_ret_per_provinciales(self) -> None:
         RetPerProvincialesWindow(self, self.current_config, self.example_paths)
+
+    def open_carga_iva_simple(self) -> None:
+        CargaIvaSimpleWindow(self, self.current_config, self.example_paths)
 
     def open_usuario(self) -> None:
         UsuarioWindow(self, self.current_config)

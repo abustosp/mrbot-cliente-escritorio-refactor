@@ -1,5 +1,6 @@
 from mrbot_app.windows.apocrifos import ApocrifosWindow
 from mrbot_app.windows.aportes_en_linea import AportesEnLineaWindow
+from mrbot_app.windows.carga_iva_simple import CargaIvaSimpleWindow
 from mrbot_app.windows.bcra import BcraWindow
 from mrbot_app.windows.ccma import CcmaWindow
 from mrbot_app.windows.consulta_cuit import ConsultaCuitWindow
@@ -28,6 +29,7 @@ from mrbot_app.windows.facturometro import FacturometroWindow
 __all__ = [
     "ApocrifosWindow",
     "AportesEnLineaWindow",
+    "CargaIvaSimpleWindow",
     "BcraWindow",
     "CcmaWindow",
     "ConsultaCuitWindow",
