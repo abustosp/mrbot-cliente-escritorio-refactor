@@ -1,6 +1,7 @@
 import concurrent.futures
 import os
 import glob
+import threading
 import tkinter as tk
 from datetime import datetime
 from tkinter import ttk, messagebox, scrolledtext
@@ -84,6 +85,9 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
         self._stage_log_windows: Dict[str, list[tk.Text]] = {k: [] for k in self._stage_definitions}
         self._stage_progress_bars: Dict[str, ttk.Progressbar] = {}
         self._stage_progress_labels: Dict[str, tk.StringVar] = {}
+        self._stage_log_block_local = threading.local()
+        self._stage_abort_events = {k: threading.Event() for k in self._stage_definitions}
+        self._stage_abort_buttons: Dict[str, ttk.Button] = {}
 
         self._build_stage_progress_section(container)
         self._build_stage_log_buttons(container)
@@ -94,12 +98,12 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
         progress_frame.columnconfigure(1, weight=1)
 
         rows = [
-            ("mc", "Mis Comprobantes"),
-            ("rcel", "RCEL"),
-            ("proc", "Procesamiento"),
+            ("mc", "Mis Comprobantes", True),
+            ("rcel", "RCEL", True),
+            ("proc", "Procesamiento", False),
         ]
 
-        for row_idx, (stage, label) in enumerate(rows):
+        for row_idx, (stage, label, has_abort) in enumerate(rows):
             ttk.Label(progress_frame, text=label).grid(row=row_idx, column=0, sticky="w", padx=8, pady=4)
             bar = ttk.Progressbar(progress_frame, orient="horizontal", mode="determinate")
             bar.grid(row=row_idx, column=1, sticky="ew", padx=8, pady=4)
@@ -108,6 +112,16 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
 
             self._stage_progress_bars[stage] = bar
             self._stage_progress_labels[stage] = count_var
+
+            if has_abort:
+                abort_btn = ttk.Button(
+                    progress_frame,
+                    text="Abortar",
+                    command=lambda s=stage: self._abort_process_stage(s),
+                )
+                abort_btn.grid(row=row_idx, column=3, sticky="e", padx=(4, 8), pady=4)
+                abort_btn.state(["disabled"])
+                self._stage_abort_buttons[stage] = abort_btn
 
     def _build_stage_log_buttons(self, parent) -> None:
         logs_frame = ttk.LabelFrame(parent, text="Logs")
@@ -196,19 +210,57 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
             for line in lines
         ) + "\n"
 
-        self._stage_logs[stage].append(formatted)
+        stack = self._stage_log_block_stack(stage)
+        if stack:
+            stack[-1]["lines"].append(formatted)
+            return
 
+        self._stage_logs[stage].append(formatted)
+        self._flush_stage_log_to_windows(stage, formatted)
+
+    def _flush_stage_log_to_windows(self, stage: str, text: str) -> None:
         def _update_windows() -> None:
             for txt in list(self._stage_log_windows.get(stage, [])):
                 try:
                     txt.configure(state="normal")
-                    txt.insert(tk.END, formatted)
+                    txt.insert(tk.END, text)
                     txt.see(tk.END)
                     txt.configure(state="disabled")
                 except Exception:
                     continue
 
         self.after(0, _update_windows)
+
+    def _stage_log_block_stack(self, stage: str) -> list:
+        stacks = getattr(self._stage_log_block_local, "stacks", None)
+        if stacks is None:
+            stacks = {}
+            self._stage_log_block_local.stacks = stacks
+        stack = stacks.get(stage)
+        if stack is None:
+            stack = []
+            stacks[stage] = stack
+        return stack
+
+    def _flush_stage_block(self, stage: str, block: Dict[str, Any]) -> None:
+        sep = "-" * 60
+        header = self._format_stage_log_message(f"{sep}\nCONTRIBUYENTE: {block['label']}\n{sep}")
+        content = header + "".join(block["lines"])
+        content_with_gap = content + self._format_stage_log_message("")
+
+        self._stage_logs[stage].append(content_with_gap)
+        self._flush_stage_log_to_windows(stage, content_with_gap)
+
+    def _format_stage_log_message(self, message: str) -> str:
+        if not message:
+            return ""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        lines = str(message).splitlines() or [""]
+        formatted = "\n".join(
+            f"[{timestamp}] {line}" if line else f"[{timestamp}]"
+            for line in lines
+        )
+        return formatted + "\n"
 
     def _log_info_stage(self, stage: str, message: str) -> None:
         self._append_stage_log(stage, f"INFO: {message}")
@@ -217,7 +269,9 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
         self._append_stage_log(stage, f"ERROR: {message}")
 
     def _run_with_stage_log_block(self, stage: str, label: str, fn: Callable[..., Any], *args, **kwargs) -> Any:
-        self._append_stage_log(stage, f"{'-' * 60}\nCONTRIBUYENTE: {label}\n{'-' * 60}")
+        stack = self._stage_log_block_stack(stage)
+        block = {"label": str(label or "sin_identificador"), "lines": []}
+        stack.append(block)
         self._append_stage_log(stage, f"EJECUCION INICIO: {datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
         try:
             return fn(*args, **kwargs)
@@ -226,7 +280,52 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
             return None
         finally:
             self._append_stage_log(stage, f"EJECUCION FIN: {datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
-            self._append_stage_log(stage, "")
+            finished_block = stack.pop()
+            self._flush_stage_block(stage, finished_block)
+
+    def _run_stage_in_thread(self, stage: str, target: Callable[..., Any], *args, **kwargs) -> None:
+        """Ejecuta target en un hilo separado, gestionando el aborto por etapa."""
+        self._stage_abort_events[stage].clear()
+        self.clear_execution_summary()
+        abort_btn = self._stage_abort_buttons.get(stage)
+        if abort_btn:
+            abort_btn.state(["!disabled"])
+
+        def _wrapper():
+            try:
+                target(*args, **kwargs)
+            except Exception as e:
+                self._log_error_stage(stage, f"Error en hilo: {e}")
+            finally:
+                self.after(0, lambda: self._on_stage_thread_finished(stage))
+
+        t = threading.Thread(target=_wrapper, daemon=True)
+        t.start()
+
+    def _on_stage_thread_finished(self, stage: str) -> None:
+        abort_btn = self._stage_abort_buttons.get(stage)
+        if abort_btn:
+            abort_btn.state(["disabled"])
+
+        if self._stage_abort_events[stage].is_set():
+            self._log_info_stage(stage, "Proceso abortado por el usuario.")
+            self.clear_execution_summary()
+            messagebox.showinfo(
+                "Abortado",
+                f"El proceso de {self._stage_definitions[stage]['title']} fue detenido por el usuario.",
+            )
+            return
+
+        self.maybe_show_execution_summary()
+
+    def _abort_process_stage(self, stage: str) -> None:
+        if not messagebox.askyesno("Confirmar", f"¿Desea detener la descarga de {self._stage_definitions[stage]['title']}?"):
+            return
+        self._stage_abort_events[stage].set()
+        abort_btn = self._stage_abort_buttons.get(stage)
+        if abort_btn:
+            abort_btn.state(["disabled"])
+        self._log_info_stage(stage, "Solicitud de aborto enviada...")
 
     def cargar_excel(self) -> None:
         super().cargar_excel()
@@ -254,7 +353,7 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
             self._clear_stage_logs("mc")
             self._set_stage_progress("mc", 0, 0)
             self._log_info_stage("mc", "INICIADOR: Control Monotributistas | accion=Descarga MC")
-            self.run_in_thread(self._worker_mc)
+            self._run_stage_in_thread("mc", self._worker_mc)
 
     def _worker_mc(self):
         df = self.excel_df
@@ -279,7 +378,7 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
             for future in concurrent.futures.as_completed(futures):
                 idx = futures[future]
                 completed += 1
-                if self._abort_event.is_set():
+                if self._stage_abort_events["mc"].is_set():
                     executor.shutdown(wait=False, cancel_futures=True)
                     break
 
@@ -302,9 +401,13 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
         self._log_info_stage("mc", "Descarga MC finalizada.")
 
     def _process_row_mc_control(self, row):
-        if self._abort_event.is_set():
-            return
-        procesar_descarga_mc(row, log_fn=lambda msg: self._append_stage_log("mc", msg))
+        if self._stage_abort_events["mc"].is_set():
+            return None
+        return procesar_descarga_mc(
+            row,
+            log_fn=lambda msg: self._append_stage_log("mc", msg),
+            abort_check=self._stage_abort_events["mc"].is_set,
+        )
 
     def descargar_rcel(self) -> None:
         if self.excel_df is None or self.excel_df.empty:
@@ -315,7 +418,7 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
             self._clear_stage_logs("rcel")
             self._set_stage_progress("rcel", 0, 0)
             self._log_info_stage("rcel", "INICIADOR: Control Monotributistas | accion=Descarga RCEL")
-            self.run_in_thread(self._worker_rcel)
+            self._run_stage_in_thread("rcel", self._worker_rcel)
 
     def _worker_rcel(self):
         df = self.excel_df
@@ -342,7 +445,7 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
             for future in concurrent.futures.as_completed(futures):
                 idx = futures[future]
                 completed += 1
-                if self._abort_event.is_set():
+                if self._stage_abort_events["rcel"].is_set():
                     executor.shutdown(wait=False, cancel_futures=True)
                     break
 
@@ -365,9 +468,14 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
         self._log_info_stage("rcel", "Descarga RCEL finalizada.")
 
     def _process_row_rcel_control(self, row, config):
-        if self._abort_event.is_set():
-            return
-        procesar_descarga_rcel(row, config, log_fn=lambda msg: self._append_stage_log("rcel", msg))
+        if self._stage_abort_events["rcel"].is_set():
+            return None
+        return procesar_descarga_rcel(
+            row,
+            config,
+            log_fn=lambda msg: self._append_stage_log("rcel", msg),
+            abort_check=self._stage_abort_events["rcel"].is_set,
+        )
 
     def procesar_datos(self) -> None:
         # Check Categorias.xlsx
@@ -400,7 +508,7 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
 
             search_path = "descargas" if os.path.exists("descargas") else "."
 
-            self.run_in_thread(self._worker_process, cat_path, search_path)
+            self._run_stage_in_thread("proc", self._worker_process, cat_path, search_path)
 
     def _worker_process(self, cat_path, search_path):
         self._log_info_stage("proc", f"Buscando archivos en: {search_path}")

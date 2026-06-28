@@ -98,6 +98,7 @@ def descargar_archivos_minio_concurrente(
     urls: List[Dict[str, str]],
     max_workers: int = MAX_WORKERS,
     log_fn: Optional[Callable[[str], None]] = None,
+    abort_check: Optional[Callable[[], bool]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Descarga múltiples archivos desde MinIO de forma concurrente.
@@ -106,11 +107,13 @@ def descargar_archivos_minio_concurrente(
         urls: Lista de dicts con "url" y "destino"
         max_workers: Número de workers concurrentes (default: 10)
         log_fn: Funcion opcional para registrar logs (UI/CLI)
+        abort_check: Funcion opcional que devuelve True si se debe abortar
 
     Returns:
         Lista de resultados de las descargas
     """
     resultados = []
+    aborted = False
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
@@ -119,6 +122,11 @@ def descargar_archivos_minio_concurrente(
         }
 
         for future in as_completed(futures):
+            if abort_check and abort_check():
+                aborted = True
+                executor.shutdown(wait=False, cancel_futures=True)
+                break
+
             resultado = future.result()
             resultados.append(resultado)
 
@@ -126,6 +134,9 @@ def descargar_archivos_minio_concurrente(
                 _log_message(f"INFO: Descargado: {os.path.basename(resultado['destino'])}", log_fn)
             else:
                 _log_message(f"ERROR: Error descargando: {resultado['destino']} - {resultado['error']}", log_fn)
+
+    if aborted:
+        _log_message("INFO: Descarga abortada por el usuario.", log_fn)
 
     return resultados
 

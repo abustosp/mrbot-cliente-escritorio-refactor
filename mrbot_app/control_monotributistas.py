@@ -64,11 +64,13 @@ def _parse_bool(valor: Any, default: bool = False) -> bool:
 
 def procesar_descarga_mc(
     row: pd.Series,
-    log_fn: Optional[Callable[[str], None]] = None
+    log_fn: Optional[Callable[[str], None]] = None,
+    abort_check: Optional[Callable[[], bool]] = None,
 ) -> Dict[str, Any]:
     """
     Procesa la descarga de Mis Comprobantes para un contribuyente.
     Utiliza las variables de entorno para credenciales (como consulta_mc original).
+    abort_check: funcion opcional que devuelve True si se debe abortar el proceso.
     """
     cuit_representante = str(row.get('cuit_representante', '')).strip()
     clave_representante = str(row.get('clave_representante', '')).strip()
@@ -116,6 +118,17 @@ def procesar_descarga_mc(
     downloads = 0
 
     try:
+        if abort_check and abort_check():
+            _log_info(f"Abortando request MC para CUIT {cuit_representado} antes de consultar.", log_fn)
+            return {
+                "cuit_representado": cuit_representado,
+                "success": False,
+                "message": "Abortado por el usuario",
+                "descarga_esperada": True,
+                "descargas": 0,
+                "errores_descarga": "Abortado por el usuario",
+            }
+
         response = consulta_mc(
             desde=desde,
             hasta=hasta,
@@ -131,6 +144,17 @@ def procesar_descarga_mc(
             log_fn=log_fn
         )
 
+        if abort_check and abort_check():
+            _log_info(f"Abortando descarga MC para CUIT {cuit_representado} despues de consultar.", log_fn)
+            return {
+                "cuit_representado": cuit_representado,
+                "success": False,
+                "message": "Abortado por el usuario",
+                "descarga_esperada": True,
+                "descargas": 0,
+                "errores_descarga": "Abortado por el usuario",
+            }
+
         if not response.get("success", False):
             error_msg = response.get("error", response.get("detail", "Error desconocido"))
             _log_error(f"API Error MC: {error_msg}", log_fn)
@@ -143,11 +167,52 @@ def procesar_descarga_mc(
                 "errores_descarga": str(error_msg),
             }
 
+        # Some responses return success=true with a populated 'error' field and no MinIO URLs.
+        # Treat that as a failed download so the summary reflects the real outcome.
+        response_errors = response.get("error") or []
+        if isinstance(response_errors, list):
+            response_errors_text = "; ".join(str(e) for e in response_errors if e)
+        else:
+            response_errors_text = str(response_errors) if response_errors else ""
+
+        emitidos_url = response.get("mis_comprobantes_emitidos_url_minio") or ""
+        recibidos_url = response.get("mis_comprobantes_recibidos_url_minio") or ""
+        no_urls = (not emitidos_url) and (not recibidos_url)
+
+        if response_errors_text and no_urls:
+            _log_error(f"API MC sin archivos: {response_errors_text}", log_fn)
+            return {
+                "cuit_representado": cuit_representado,
+                "success": False,
+                "message": response_errors_text,
+                "descarga_esperada": True,
+                "descargas": 0,
+                "errores_descarga": response_errors_text,
+            }
+
+        if no_urls:
+            _log_info("Respuesta MC sin URLs MinIO para descargar.", log_fn)
+            return {
+                "cuit_representado": cuit_representado,
+                "success": True,
+                "descarga_esperada": True,
+                "descargas": 0,
+                "errores_descarga": None,
+            }
+
         # Determine download directory
         if not ubicacion_base:
             ubicacion_base = os.path.join("descargas", "Control_Monotributistas", "Mis Comprobantes", cuit_representado)
 
         os.makedirs(ubicacion_base, exist_ok=True)
+
+        # Save API response as JSON log for traceability
+        try:
+            log_response_path = os.path.join(ubicacion_base, "response_log.json")
+            with open(log_response_path, "w", encoding="utf-8") as f:
+                json.dump(response, f, ensure_ascii=False, indent=2, default=str)
+        except Exception as e:
+            _log_error(f"Error guardando log response JSON para MC: {e}", log_fn)
 
         # Standard structure from external repo: [Base]/extraido/*.csv
         # But we need to download ZIPs first.
@@ -185,7 +250,7 @@ def procesar_descarga_mc(
             _log_info(f"Descargando {len(archivos_a_descargar)} archivos MC...", log_fn)
             # Adapt structure for downloader
             download_items = [{"url": item["url"], "destino": item["destino"]} for item in archivos_a_descargar]
-            results = descargar_archivos_minio_concurrente(download_items, log_fn=log_fn)
+            results = descargar_archivos_minio_concurrente(download_items, log_fn=log_fn, abort_check=abort_check)
             downloads = sum(1 for item in results if item.get("success"))
             download_errors.extend(
                 str(item.get("error") or "Error al descargar")
@@ -265,11 +330,13 @@ def _collect_pdf_items(data: Any) -> List[Tuple[str, Dict[str, Any]]]:
 def procesar_descarga_rcel(
     row: pd.Series,
     config: Tuple[str, str, str],
-    log_fn: Optional[Callable[[str], None]] = None
+    log_fn: Optional[Callable[[str], None]] = None,
+    abort_check: Optional[Callable[[], bool]] = None,
 ) -> Dict[str, Any]:
     """
     Procesa la descarga de RCEL.
     config: (base_url, api_key, email)
+    abort_check: funcion opcional que devuelve True si se debe abortar el proceso.
     """
     base_url, api_key, email = config
 
@@ -320,6 +387,17 @@ def procesar_descarga_rcel(
     downloads = 0
 
     try:
+        if abort_check and abort_check():
+            _log_info(f"Abortando request RCEL para CUIT {cuit_representado} antes de consultar.", log_fn)
+            return {
+                "cuit_representado": cuit_representado,
+                "success": False,
+                "message": "Abortado por el usuario",
+                "descarga_esperada": True,
+                "descargas": 0,
+                "errores_descarga": "Abortado por el usuario",
+            }
+
         # Log request (redacted)
         safe_payload = payload.copy()
         safe_payload['clave'] = '***'
@@ -327,6 +405,17 @@ def procesar_descarga_rcel(
 
         response = safe_post(url_api, headers, payload)
         data = response.get("data")
+
+        if abort_check and abort_check():
+            _log_info(f"Abortando descarga RCEL para CUIT {cuit_representado} despues de consultar.", log_fn)
+            return {
+                "cuit_representado": cuit_representado,
+                "success": False,
+                "message": "Abortado por el usuario",
+                "descarga_esperada": True,
+                "descargas": 0,
+                "errores_descarga": "Abortado por el usuario",
+            }
 
         if not response.get("success") and not data:
              _log_error(f"API Error RCEL: {response.get('message', 'Unknown error')}", log_fn)
@@ -339,12 +428,43 @@ def procesar_descarga_rcel(
                  "errores_descarga": str(response.get('message', 'Unknown error')),
              }
 
+        # Detect responses where data reports success=false or carries an error even with HTTP 200.
+        data_success = True
+        data_error_text = ""
+        if isinstance(data, dict):
+            data_success = bool(data.get("success", True))
+            err_field = data.get("error") or data.get("message") or data.get("detail")
+            if isinstance(err_field, list):
+                data_error_text = "; ".join(str(e) for e in err_field if e)
+            elif err_field:
+                data_error_text = str(err_field)
+
+        if not data_success:
+            error_text = data_error_text or "Error desconocido (RCEL)"
+            _log_error(f"API Error RCEL: {error_text}", log_fn)
+            return {
+                "cuit_representado": cuit_representado,
+                "success": False,
+                "message": error_text,
+                "descarga_esperada": True,
+                "descargas": 0,
+                "errores_descarga": error_text,
+            }
+
         # Determine download directory
         if not ubicacion_base:
             # Fallback structure: descargas/Control_Monotributistas/RCEL/[CUIT]
             ubicacion_base = os.path.join("descargas", "Control_Monotributistas", "RCEL", cuit_representado)
 
         os.makedirs(ubicacion_base, exist_ok=True)
+
+        # Save API response as JSON log for traceability
+        try:
+            log_response_path = os.path.join(ubicacion_base, "response_log.json")
+            with open(log_response_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+        except Exception as e:
+            _log_error(f"Error guardando log response JSON para RCEL: {e}", log_fn)
 
         # Collect PDFs and metadata
         pdf_items = _collect_pdf_items(data)
@@ -368,7 +488,7 @@ def procesar_descarga_rcel(
             dest = os.path.join(ubicacion_base, filename)
             download_items.append({"url": url, "destino": dest})
 
-        results = descargar_archivos_minio_concurrente(download_items, log_fn=log_fn)
+        results = descargar_archivos_minio_concurrente(download_items, log_fn=log_fn, abort_check=abort_check)
         downloads = sum(1 for item in results if item.get("success"))
         download_errors.extend(
             str(item.get("error") or "Error al descargar")
