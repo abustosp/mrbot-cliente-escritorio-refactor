@@ -9,6 +9,7 @@ import pandas as pd
 from typing import Optional, Dict, Any, Callable, List
 
 from mrbot_app.config import get_max_workers
+from mrbot_app.files import open_with_default_app
 from mrbot_app.windows.base import BaseWindow
 from mrbot_app.windows.mixins import ExcelHandlerMixin
 from mrbot_app.control_monotributistas import (
@@ -65,6 +66,7 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
         ttk.Button(actions_frame, text="1. Descargar Mis Comprobantes", command=self.descargar_mc).pack(fill="x", padx=8, pady=4)
         ttk.Button(actions_frame, text="2. Descargar RCEL", command=self.descargar_rcel).pack(fill="x", padx=8, pady=4)
         ttk.Button(actions_frame, text="3. Procesar y Generar Reporte", command=self.procesar_datos).pack(fill="x", padx=8, pady=4)
+        ttk.Button(actions_frame, text="Abrir Reporte General HTML", command=self.abrir_reporte_html).pack(fill="x", padx=8, pady=4)
 
         self._stage_definitions = {
             "mc": {
@@ -537,14 +539,33 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
         os.makedirs(output_dir, exist_ok=True)
 
         output_file = os.path.join(output_dir, "Reporte Recategorizaciones de Monotributistas.xlsx")
+        html_output_dir = os.path.join(output_dir, "reportes_html")
 
         generar_reporte_control(
             archivos_mc,
             archivos_json,
             cat_path,
             output_file,
-            log_fn=lambda msg: self._append_stage_log("proc", msg)
+            log_fn=lambda msg: self._append_stage_log("proc", msg),
+            html_output_dir=html_output_dir,
         )
 
         self._set_stage_progress("proc", 1, 1)
         self._log_info_stage("proc", f"Reporte generado: {output_file}")
+        self._log_info_stage("proc", f"Reportes HTML: {html_output_dir}")
+
+    def abrir_reporte_html(self) -> None:
+        """Abre el reporte general HTML generado."""
+        html_dir = os.path.join("descargas", "Control_Monotributistas", "reportes_html")
+        general_path = os.path.join(html_dir, "reporte_general.html")
+        if os.path.exists(general_path):
+            if open_with_default_app(general_path):
+                self._log_info_stage("proc", f"Abriendo reporte general: {general_path}")
+            else:
+                messagebox.showerror("Error", "No se pudo abrir el reporte HTML.")
+        else:
+            messagebox.showwarning(
+                "Reporte no encontrado",
+                "No se encontró el reporte general HTML.\n"
+                "Primero debes ejecutar el paso 3 (Procesar y Generar Reporte).",
+            )

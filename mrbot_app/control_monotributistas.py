@@ -23,6 +23,162 @@ from mrbot_app.formatos import (
 
 NOTAS_DE_CREDITO = [3, 8, 13, 21, 38, 43, 44, 48, 53, 90, 110, 112, 113, 114, 119, 203, 208, 213]
 
+# ─── Funciones de categoría reutilizables ─────────────────────────────
+
+def obtener_max_ingresos_categoria(x: float, categorias: pd.DataFrame) -> float:
+    """Retorna el límite de ingresos brutos de la categoría que cubre el monto x."""
+    matches = categorias.loc[categorias['Ingresos brutos'] >= x, 'Ingresos brutos']
+    return matches.iloc[0] if not matches.empty else 0
+
+
+def obtener_categoria(x: float, categorias: pd.DataFrame) -> str:
+    """Retorna la etiqueta de categoría de monotributo para el monto x."""
+    matches = categorias.loc[categorias['Ingresos brutos'] >= x, 'Categoria']
+    return matches.iloc[0] if not matches.empty else "Excedido"
+
+
+# ─── Agrupación mensual para reportes HTML ───────────────────────────
+
+def agrupar_por_mes(consolidado: pd.DataFrame) -> pd.DataFrame:
+    """
+    Agrupa el consolidado por Cliente, mes (YYYY-MM) y Tipo_MC,
+    sumando Imp. Total (ya neteado por NC y convertido a pesos).
+    """
+    df = consolidado.copy()
+    if 'Tipo_MC' not in df.columns:
+        df['Tipo_MC'] = 'General'
+    df['Mes'] = df['Fecha'].dt.strftime('%Y-%m')
+    agrupado = df.groupby(
+        ['Cliente', 'Fin CUIT', 'Mes', 'Tipo_MC'], as_index=False
+    )['Imp. Total'].sum()
+    agrupado.rename(columns={'Imp. Total': 'Total Mensual'}, inplace=True)
+    return agrupado
+
+
+def desglose_contrapartes(
+    df: pd.DataFrame,
+    col_contraparte: str = 'Denominación Receptor/Emisor',
+    limite: int = 10,
+) -> List[Dict[str, Any]]:
+    """
+    Agrupa por contraparte (cliente/proveedor), suma Imp. Total y calcula
+    porcentaje de incidencia. Retorna top *limite* + 'Otros'.
+    Similar al 'counterparty_breakdown' del ERP.
+    """
+    if df.empty or col_contraparte not in df.columns:
+        return []
+
+    grupo = df.groupby(col_contraparte, as_index=False)['Imp. Total'].sum()
+    grupo = grupo.sort_values('Imp. Total', ascending=False)
+    total_gral = float(grupo['Imp. Total'].sum())
+
+    data = []
+    for _, row in grupo.iterrows():
+        nombre = str(row[col_contraparte]) or "(sin nombre)"
+        total = float(row['Imp. Total'])
+        data.append({"nombre": nombre.strip(), "total": round(total, 2)})
+
+    if len(data) > limite:
+        top = data[:limite]
+        otros_total = round(sum(d["total"] for d in data[limite:]), 2)
+        top.append({"nombre": "Otros", "total": otros_total})
+    else:
+        top = data
+
+    for d in top:
+        d["porcentaje"] = round((d["total"] / total_gral * 100) if total_gral else 0, 1)
+
+    return top
+
+
+def preparar_datos_individuales(
+    consolidado: pd.DataFrame,
+    categorias: pd.DataFrame,
+    cliente: str,
+    cuit: str,
+) -> Dict[str, Any]:
+    """
+    Prepara los datos mensuales de compras/ventas, categorización
+    y desglose por contraparte para un contribuyente individual.
+    """
+    df_cliente = consolidado[consolidado['Cliente'] == cliente].copy()
+    if df_cliente.empty:
+        return {
+            "cliente": cliente,
+            "cuit": cuit,
+            "total_ventas": 0,
+            "total_compras": 0,
+            "categoria": "Sin datos",
+            "categoria_compras": "Sin datos",
+            "limite_categoria": 0,
+            "pct_limite": 0,
+            "series_ventas": [],
+            "series_compras": [],
+            "escala_categorias": [],
+            "contrapartes_ventas": [],
+            "contrapartes_compras": [],
+        }
+
+    df_cliente['Mes'] = df_cliente['Fecha'].dt.strftime('%Y-%m')
+
+    # Split by Tipo_MC: Emitido = Ventas, Recibido = Compras
+    mask_ventas = df_cliente['Tipo_MC'] == 'Emitido'
+    mask_compras = df_cliente['Tipo_MC'] == 'Recibido'
+
+    ventas = df_cliente[mask_ventas].groupby('Mes', as_index=False)['Imp. Total'].sum()
+    compras = df_cliente[mask_compras].groupby('Mes', as_index=False)['Imp. Total'].sum()
+
+    meses = sorted(set(list(ventas['Mes']) + list(compras['Mes'])))
+    ventas_map = dict(zip(ventas['Mes'], ventas['Imp. Total']))
+    compras_map = dict(zip(compras['Mes'], compras['Imp. Total']))
+
+    series_ventas = [{"mes": m, "total": round(float(ventas_map.get(m, 0)), 2)} for m in meses]
+    series_compras = [{"mes": m, "total": round(float(compras_map.get(m, 0)), 2)} for m in meses]
+
+    total_ventas = sum(s["total"] for s in series_ventas)
+    total_compras = sum(s["total"] for s in series_compras)
+
+    categoria_label = obtener_categoria(total_ventas, categorias)
+    categoria_compras_label = obtener_categoria(total_compras, categorias)
+    limite_categoria = obtener_max_ingresos_categoria(total_ventas, categorias)
+
+    escala_categorias = []
+    for _, row in categorias.iterrows():
+        escala_categorias.append({
+            "categoria": str(row['Categoria']),
+            "limite": float(row['Ingresos brutos']),
+        })
+    # La última categoría es el límite máximo antes de exceder; no se muestra
+    # en el gráfico de escala para no confundir.
+    escala_categorias = escala_categorias[:-1]
+
+    pct_limite = round((total_ventas / limite_categoria * 100), 1) if limite_categoria > 0 else 0
+
+    # ─── Desglose por contraparte (clientes/proveedores) ──────────────
+    contrapartes_ventas = desglose_contrapartes(
+        df_cliente[mask_ventas], 'Denominación Receptor/Emisor'
+    )
+    contrapartes_compras = desglose_contrapartes(
+        df_cliente[mask_compras], 'Denominación Receptor/Emisor'
+    )
+
+    return {
+        "cliente": cliente,
+        "cuit": str(cuit),
+        "total_ventas": round(total_ventas, 2),
+        "total_compras": round(total_compras, 2),
+        "categoria": categoria_label,
+        "categoria_compras": categoria_compras_label,
+        "limite_categoria": round(limite_categoria, 2),
+        "pct_limite": pct_limite,
+        "series_ventas": series_ventas,
+        "series_compras": series_compras,
+        "escala_categorias": escala_categorias,
+        "contrapartes_ventas": contrapartes_ventas,
+        "contrapartes_compras": contrapartes_compras,
+    }
+
+
 def _log_message(message: str, log_fn: Optional[Callable[[str], None]] = None) -> None:
     if log_fn:
         log_fn(message)
@@ -602,15 +758,15 @@ def leer_archivos_csv_batch(archivos_mc: List[str], log_fn: Optional[Callable[[s
             es_recibido = 'Denominación Emisor' in data.columns
 
             if es_emitido:
-                data['Nro. Doc. Receptor/Emisor'] = data['Denominación Receptor'] # Wait, control.py mapped 'Nro. Doc. Receptor' -> 'Nro. Doc. Receptor/Emisor'??
-                # control.py:
-                # data['Nro. Doc. Receptor/Emisor'] = data['Nro. Doc. Receptor']
-                # data['Denominación Receptor/Emisor'] = data['Denominación Receptor']
                 data['Nro. Doc. Receptor/Emisor'] = data.get('Nro. Doc. Receptor', '')
                 data['Denominación Receptor/Emisor'] = data.get('Denominación Receptor', '')
+                data['Tipo_MC'] = 'Emitido'
             elif es_recibido:
                 data['Nro. Doc. Receptor/Emisor'] = data.get('Nro. Doc. Emisor', '')
                 data['Denominación Receptor/Emisor'] = data.get('Denominación Emisor', '')
+                data['Tipo_MC'] = 'Recibido'
+            else:
+                data['Tipo_MC'] = 'General'
 
             cols = [
                 'Fecha de Emisión', 'Tipo de Comprobante', 'Punto de Venta',
@@ -619,7 +775,7 @@ def leer_archivos_csv_batch(archivos_mc: List[str], log_fn: Optional[Callable[[s
                 'Imp. Neto Gravado Total', 'Imp. Neto No Gravado',
                 'Imp. Op. Exentas', 'Otros Tributos', 'Total IVA', 'Imp. Total',
                 'Nro. Doc. Receptor/Emisor', 'Denominación Receptor/Emisor',
-                'Archivo', 'CUIT Cliente', 'Fin CUIT', 'Cliente'
+                'Archivo', 'CUIT Cliente', 'Fin CUIT', 'Cliente', 'Tipo_MC'
             ]
             # Ensure columns exist
             for c in cols:
@@ -677,10 +833,13 @@ def generar_reporte_control(
     archivos_json: List[str],
     path_categorias: str,
     output_path: str,
-    log_fn: Optional[Callable[[str], None]] = None
+    log_fn: Optional[Callable[[str], None]] = None,
+    html_output_dir: Optional[str] = None,
 ) -> None:
     """
     Core logic for generating the report.
+    Si html_output_dir se proporciona, también genera reportes HTML individuales
+    y un reporte general con gráficos comparativos.
     """
     _log_info("Iniciando generación de reporte...", log_fn)
 
@@ -820,19 +979,34 @@ def generar_reporte_control(
         )
         tabla_dinamica.rename(columns={'Tipo': 'Cantidad de Comprobantes'}, inplace=True)
 
-        # Categorization
-        def get_max_ingresos(x):
-            matches = categorias.loc[categorias['Ingresos brutos'] >= x, 'Ingresos brutos']
-            return matches.iloc[0] if not matches.empty else 0
+        # Categorization (using module-level reusable functions)
+        tabla_dinamica['Ingresos brutos máximos por la categoría'] = (
+            tabla_dinamica['Importe Prorrateado'].apply(obtener_max_ingresos_categoria, args=(categorias,))
+        )
+        tabla_dinamica['Categoría'] = (
+            tabla_dinamica['Importe Prorrateado'].apply(obtener_categoria, args=(categorias,))
+        )
 
-        def get_categoria(x):
-            matches = categorias.loc[categorias['Ingresos brutos'] >= x, 'Categoria']
-            return matches.iloc[0] if not matches.empty else "Excedido"
+        # ─── Generar reportes HTML con gráficos (ANTES de formatear fechas) ──
+        if html_output_dir:
+            _log_info("Generando reportes HTML con gráficos...", log_fn)
+            try:
+                from mrbot_app.reporte_monotributista_html import exportar_reportes_html
+                exportar_reportes_html(
+                    consolidado=consolidado,
+                    categorias=categorias,
+                    output_dir=html_output_dir,
+                    fecha_inicial=fecha_inicial,
+                    fecha_final=fecha_final,
+                    log_fn=log_fn,
+                )
+                _log_info(f"Reportes HTML generados en: {html_output_dir}", log_fn)
+            except Exception as html_e:
+                _log_error(f"Error generando reportes HTML: {html_e}", log_fn)
+                import traceback
+                _log_error(traceback.format_exc(), log_fn)
 
-        tabla_dinamica['Ingresos brutos máximos por la categoría'] = tabla_dinamica['Importe Prorrateado'].apply(get_max_ingresos)
-        tabla_dinamica['Categoría'] = tabla_dinamica['Importe Prorrateado'].apply(get_categoria)
-
-        # Formatting Dates for export
+        # Formatting Dates for export (Excel necesita strings)
         for c in ['Desde', 'Hasta', 'Fecha', 'Fecha_Inicial_max', 'Fecha_Final_min']:
              consolidado[c] = consolidado[c].dt.strftime('%d/%m/%Y')
 
@@ -855,9 +1029,6 @@ def generar_reporte_control(
         if 'Consolidado' in wb.sheetnames:
             ws = wb['Consolidado']
             aplicar_formato_encabezado(ws)
-            # Apply currency to Imp Total and Prorrateado (find indices or guess)
-            # Imp Total is ~14, Importe Prorrateado is last
-            # Just applying auto width and header is enough for MVP, or use logic from control.py
             autoajustar_columnas(ws)
             agregar_filtros(ws)
 
