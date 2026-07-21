@@ -85,6 +85,21 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         # Download Path
         self.add_download_path_frame(container)
 
+        # Filtro de periodo para recálculo
+        recalculo_frame = ttk.LabelFrame(container, text="Recalculo de reporte (filtro por periodo)")
+        recalculo_frame.pack(fill="x", pady=4)
+        rc_inner = ttk.Frame(recalculo_frame)
+        rc_inner.pack(fill="x", padx=4, pady=4)
+        ttk.Label(rc_inner, text="Desde (MM/AAAA)").grid(row=0, column=0, padx=4, pady=2, sticky="w")
+        ttk.Label(rc_inner, text="Hasta (MM/AAAA)").grid(row=0, column=2, padx=4, pady=2, sticky="w")
+        self.periodo_desde_var = tk.StringVar()
+        self.periodo_hasta_var = tk.StringVar()
+        ttk.Entry(rc_inner, textvariable=self.periodo_desde_var, width=12).grid(row=0, column=1, padx=4, pady=2)
+        ttk.Entry(rc_inner, textvariable=self.periodo_hasta_var, width=12).grid(row=0, column=3, padx=4, pady=2)
+        ttk.Button(rc_inner, text="Recalcular Reporte", command=self._recalcular_reporte).grid(
+            row=0, column=4, padx=8, pady=2
+        )
+
         btns = ttk.Frame(container)
         btns.pack(fill="x", pady=4)
         ttk.Button(btns, text="Consultar individual", command=self.consulta_individual).grid(row=0, column=0, padx=4, pady=2, sticky="ew")
@@ -540,4 +555,197 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             preview_text += "\n\nMovimientos: hoja sin filas (sin movimientos devueltos)."
         else:
             preview_text += f"\n\nMovimientos exportados: {len(movimientos_df)} filas en hoja 'Movimientos'."
+        self.set_preview(self.result_box, preview_text)
+
+    # ── Recalculo de reporte con filtro de periodo ──────────────────────────
+
+    @staticmethod
+    def _periodo_sort(p: str) -> int:
+        """Convierte MM/YYYY a YYYYMM para orden cronologico."""
+        try:
+            mm, yyyy = str(p).strip().split("/")
+            return int(yyyy + mm)
+        except (ValueError, AttributeError):
+            return 0
+
+    @staticmethod
+    def _sort_to_periodo(s: int) -> str:
+        s_str = str(int(s))
+        return f"{s_str[4:6]}/{s_str[0:4]}"
+
+    def _recalcular_reporte(self):
+        """Valida entradas y lanza el recalculo en segundo plano."""
+        desde = self.periodo_desde_var.get().strip()
+        hasta = self.periodo_hasta_var.get().strip()
+
+        if not desde and not hasta:
+            messagebox.showwarning("Sin periodo", "Indica al menos Desde o Hasta (MM/AAAA).")
+            return
+
+        if desde:
+            if not re.match(r"^\d{2}/\d{4}$", desde):
+                messagebox.showerror("Formato invalido", "Desde debe tener formato MM/AAAA (ej: 01/2025).")
+                return
+        if hasta:
+            if not re.match(r"^\d{2}/\d{4}$", hasta):
+                messagebox.showerror("Formato invalido", "Hasta debe tener formato MM/AAAA (ej: 06/2026).")
+                return
+
+        self.run_in_thread(self._recalcular_worker, desde=desde or None, hasta=hasta or None)
+
+    def _recalcular_worker(self, desde=None, hasta=None):
+        self.log_info("Iniciando recálculo de reporte CCMA ...")
+
+        out_path = os.path.join("descargas", "CCMA", "ReporteCCMA.xlsx")
+        if not os.path.exists(out_path):
+            self.log_error(f"No se encontró {out_path}. Procesa el Excel primero.")
+            self.set_preview(self.result_box, "Error: no existe ReporteCCMA.xlsx. Ejecuta 'Procesar Excel' antes.")
+            return
+
+        try:
+            ccma = pd.read_excel(out_path, sheet_name="CCMA")
+            movs = pd.read_excel(out_path, sheet_name="Movimientos")
+        except Exception as exc:
+            self.log_error(f"Error leyendo {out_path}: {exc}")
+            return
+
+        self.log_info(f"CCMA: {len(ccma)} filas | Movimientos: {len(movs)} filas")
+
+        # convertir a sortable y filtrar
+        movs["_psort"] = movs["periodo"].apply(self._periodo_sort)
+        p_min_sort = self._periodo_sort(desde) if desde else 0
+        p_max_sort = self._periodo_sort(hasta) if hasta else 999999
+
+        if p_min_sort > 0:
+            movs = movs[movs["_psort"] >= p_min_sort]
+        if p_max_sort < 999999:
+            movs = movs[movs["_psort"] <= p_max_sort]
+
+        self.log_info(f"Movimientos filtrados: {len(movs)} filas")
+
+        movs["cuit_int"] = movs["cuit_representado"].fillna(0).astype("int64")
+
+        def classify_sub(sub):
+            if pd.isna(sub):
+                return None
+            s = int(sub)
+            if s in (19, 86):
+                return "capital"
+            return "accesorios"
+
+        movs["categoria"] = movs["subconcepto"].apply(classify_sub)
+        movs["debe_n"] = movs["debe"].fillna(0)
+        movs["haber_n"] = movs["haber"].fillna(0)
+
+        agg = movs.groupby(["cuit_int", "categoria"], dropna=False).agg(
+            total_debe=("debe_n", "sum"),
+            total_haber=("haber_n", "sum"),
+            p_min_sort=("_psort", "min"),
+            p_max_sort=("_psort", "max"),
+        ).reset_index()
+
+        agg["neto"] = agg["total_debe"] - agg["total_haber"]
+        agg["deuda"] = agg["neto"].clip(lower=0).round(2)
+        agg["credito"] = (-agg["neto"]).clip(lower=0).round(2)
+
+        recs = {}
+        for _, row in agg.iterrows():
+            cuit = int(row["cuit_int"])
+            cat = row["categoria"]
+            if cat is None:
+                continue
+            if cuit not in recs:
+                recs[cuit] = {
+                    "cuit_representado": cuit,
+                    "deuda_capital": 0.0, "deuda_accesorios": 0.0,
+                    "credito_capital": 0.0, "credito_accesorios": 0.0,
+                    "p_min_sort": 999999, "p_max_sort": 0,
+                }
+            r = recs[cuit]
+            r[f"deuda_{cat}"] = float(row["deuda"])
+            r[f"credito_{cat}"] = float(row["credito"])
+            if row["p_min_sort"] > 0 and row["p_min_sort"] < r["p_min_sort"]:
+                r["p_min_sort"] = int(row["p_min_sort"])
+            if row["p_max_sort"] > 0 and row["p_max_sort"] > r["p_max_sort"]:
+                r["p_max_sort"] = int(row["p_max_sort"])
+
+        for cuit, r in recs.items():
+            r["total_deuda"] = round(r["deuda_capital"] + r["deuda_accesorios"], 2)
+            r["total_a_favor"] = round(r["credito_capital"] + r["credito_accesorios"], 2)
+            if r["p_min_sort"] < 999999 and r["p_max_sort"] > 0:
+                p_min = self._sort_to_periodo(r["p_min_sort"])
+                p_max = self._sort_to_periodo(r["p_max_sort"])
+                r["periodo"] = p_min if p_min == p_max else f"{p_min} - {p_max}"
+            else:
+                r["periodo"] = None
+
+        recalc_df = pd.DataFrame(list(recs.values()))
+        self.log_info(f"CUITS recalculados: {len(recalc_df)}")
+
+        # actualizar CCMA
+        ccma_upd = ccma.copy()
+        ccma_upd["cuit_int"] = ccma_upd["cuit_representado"].fillna(0).astype("int64")
+        debt_fields = [
+            "deuda_capital", "deuda_accesorios", "total_deuda",
+            "credito_capital", "credito_accesorios", "total_a_favor",
+        ]
+        for f in debt_fields:
+            if f in ccma_upd.columns:
+                ccma_upd[f] = None
+        updated = 0
+        for idx, row in ccma_upd.iterrows():
+            cuit = int(row["cuit_int"]) if row["cuit_int"] != 0 else 0
+            m = recalc_df[recalc_df["cuit_representado"] == cuit]
+            if len(m) == 1:
+                mr = m.iloc[0]
+                for f in debt_fields:
+                    ccma_upd.at[idx, f] = mr.get(f, 0.0)
+                if mr.get("periodo"):
+                    ccma_upd.at[idx, "periodo"] = mr["periodo"]
+                updated += 1
+
+        self.log_info(f"CCMA actualizadas: {updated}/{len(ccma_upd)}")
+
+        resumen_cols = [
+            "cuit_representante", "cuit_representado", "periodo",
+            "deuda_capital", "deuda_accesorios", "total_deuda",
+            "credito_capital", "credito_accesorios", "total_a_favor",
+        ]
+        resumen = ccma_upd[resumen_cols].copy()
+        resumen = resumen.sort_values("cuit_representado", na_position="last").reset_index(drop=True)
+
+        # guardar
+        base, ext = os.path.splitext(out_path)
+        output = f"{base}-filtrado{ext}"
+
+        movs_out = movs.drop(columns=["_psort", "cuit_int", "categoria", "debe_n", "haber_n"])
+        ccma_out = ccma_upd.drop(columns=["cuit_int"])
+
+        try:
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                ccma_out.to_excel(writer, index=False, sheet_name="CCMA")
+                movs_out.to_excel(writer, index=False, sheet_name="Movimientos")
+                resumen.to_excel(writer, index=False, sheet_name="Resumen")
+                for hoja_nombre in ("CCMA", "Movimientos", "Resumen"):
+                    hoja = writer.sheets.get(hoja_nombre)
+                    if hoja is None:
+                        continue
+                    aplicar_formato_encabezado(hoja)
+                    agregar_filtros(hoja)
+                    if hoja_nombre == "Movimientos":
+                        autoajustar_columnas(hoja)
+        except Exception as exc:
+            self.log_error(f"Error guardando {output}: {exc}")
+            return
+
+        self.log_info(f"Reporte filtrado guardado: {output}")
+
+        d = resumen["total_deuda"].fillna(0) > 0
+        f = resumen["total_a_favor"].fillna(0) > 0
+        sn = resumen["periodo"].isna()
+
+        preview_text = f"Recalculo CCMA — periodo: {desde or '--'} a {hasta or '--'}\n"
+        preview_text += f"Reporte guardado: {output}\n"
+        preview_text += f"CCMA: {len(ccma_out)} | Movimientos: {len(movs_out)} | Resumen: {len(resumen)}\n"
+        preview_text += f"Con deuda: {d.sum()} | A favor: {f.sum()} | Sin movimientos: {sn.sum()}"
         self.set_preview(self.result_box, preview_text)
