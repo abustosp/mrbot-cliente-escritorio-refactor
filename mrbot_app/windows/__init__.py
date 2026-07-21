@@ -22,6 +22,7 @@ from mrbot_app.windows.sifere import SifereWindow
 from mrbot_app.windows.sct import SctWindow
 from mrbot_app.windows.srt_alicuotas import SrtAlicuotasWindow
 from mrbot_app.windows.usuario import UsuarioWindow
+from mrbot_app.windows.vep_ccma import VepCcmaWindow
 from mrbot_app.windows.webservices import WebservicesWindow
 from mrbot_app.windows.control_monotributistas import ControlMonotributistasWindow
 from mrbot_app.windows.facturometro import FacturometroWindow
@@ -51,6 +52,7 @@ __all__ = [
     "SctWindow",
     "SrtAlicuotasWindow",
     "UsuarioWindow",
+    "VepCcmaWindow",
     "WebservicesWindow",
     "ControlMonotributistasWindow",
     "FacturometroWindow",

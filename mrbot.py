@@ -31,6 +31,7 @@ from mrbot_app.windows import (
     FacturometroWindow,
     UsuarioWindow,
     RetPerProvincialesWindow,
+    VepCcmaWindow,
 )
 from mrbot_app.windows.base import ConfigPane
 
@@ -152,6 +153,9 @@ class MainMenu(tk.Tk):
         )
         ttk.Button(btns, text="Facturómetro", width=btn_width, command=self.open_facturometro).grid(
             row=5, column=1, padx=4, pady=4, sticky="nsew"
+        )
+        ttk.Button(btns, text="VEP desde CCMA", width=btn_width, command=self.open_vep_ccma).grid(
+            row=5, column=2, padx=4, pady=4, sticky="nsew"
         )
 
         ttk.Separator(btns, orient="horizontal").grid(
@@ -304,6 +308,9 @@ class MainMenu(tk.Tk):
 
     def open_usuario(self) -> None:
         UsuarioWindow(self, self.current_config)
+
+    def open_vep_ccma(self) -> None:
+        VepCcmaWindow(self, self.current_config, self.example_paths)
 
 
 if __name__ == "__main__":

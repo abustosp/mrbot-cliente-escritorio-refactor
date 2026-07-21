@@ -55,12 +55,25 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             pass
         self.example_paths = example_paths or {}
 
+        self.resizable(True, True)
+        self.geometry("1250x750")
+        self.minsize(1050, 600)
+
         container = ttk.Frame(self, padding=10)
         container.pack(fill="both", expand=True)
-        self.add_section_label(container, "Cuenta Corriente de Monotributistas y Autonomos (CCMA)")
-        self.add_info_label(container, "Consulta individual o masiva basada en Excel. PDF opcional con descarga desde MinIO.")
+        container.columnconfigure(0, weight=1)
+        container.columnconfigure(1, weight=1)
+        container.rowconfigure(0, weight=1)
 
-        inputs = ttk.Frame(container)
+        left_col = ttk.Frame(container)
+        left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        right_col = ttk.Frame(container)
+        right_col.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+
+        self.add_section_label(left_col, "Cuenta Corriente de Monotributistas y Autonomos (CCMA)")
+        self.add_info_label(left_col, "Consulta individual o masiva basada en Excel. PDF opcional con descarga desde MinIO.")
+
+        inputs = ttk.Frame(left_col)
         inputs.pack(fill="x", pady=4)
         ttk.Label(inputs, text="CUIT representante").grid(row=0, column=0, sticky="w", padx=4, pady=2)
         ttk.Label(inputs, text="Clave representante").grid(row=1, column=0, sticky="w", padx=4, pady=2)
@@ -76,17 +89,15 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         self.opt_proxy = tk.BooleanVar(value=False)
         self.opt_movimientos = tk.BooleanVar(value=True)
         self.opt_pdf = tk.BooleanVar(value=False)
-        flags = ttk.Frame(container)
+        flags = ttk.Frame(left_col)
         flags.pack(anchor="w", pady=2)
         ttk.Checkbutton(flags, text="proxy_request", variable=self.opt_proxy).pack(side="left", padx=(0, 12))
         ttk.Checkbutton(flags, text="movimientos", variable=self.opt_movimientos).pack(side="left", padx=(0, 12))
         ttk.Checkbutton(flags, text="pdf", variable=self.opt_pdf).pack(side="left")
 
-        # Download Path
-        self.add_download_path_frame(container)
+        self.add_download_path_frame(left_col)
 
-        # Filtro de periodo para recálculo
-        recalculo_frame = ttk.LabelFrame(container, text="Recalculo de reporte (filtro por periodo)")
+        recalculo_frame = ttk.LabelFrame(left_col, text="Recalculo de reporte (filtro por periodo)")
         recalculo_frame.pack(fill="x", pady=4)
         rc_inner = ttk.Frame(recalculo_frame)
         rc_inner.pack(fill="x", padx=4, pady=4)
@@ -100,22 +111,22 @@ class CcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             row=0, column=4, padx=8, pady=2
         )
 
-        btns = ttk.Frame(container)
+        btns = ttk.Frame(left_col)
         btns.pack(fill="x", pady=4)
         ttk.Button(btns, text="Consultar individual", command=self.consulta_individual).grid(row=0, column=0, padx=4, pady=2, sticky="ew")
         ttk.Button(btns, text="Seleccionar Excel", command=self.cargar_excel).grid(row=0, column=1, padx=4, pady=2, sticky="ew")
         ttk.Button(btns, text="Ejemplo Excel", command=lambda: self.abrir_ejemplo_key("ccma.xlsx")).grid(row=0, column=2, padx=4, pady=2, sticky="ew")
-        ttk.Button(btns, text="Previsualizar Excel", command=lambda: self.previsualizar_excel("Previsualización CCMA")).grid(row=0, column=3, padx=4, pady=2, sticky="ew")
+        ttk.Button(btns, text="Previsualizar Excel", command=lambda: self.previsualizar_excel("Previsualizacion CCMA")).grid(row=0, column=3, padx=4, pady=2, sticky="ew")
         ttk.Button(btns, text="Procesar Excel", command=self.procesar_excel).grid(row=1, column=0, columnspan=4, padx=4, pady=6, sticky="ew")
         btns.columnconfigure((0, 1, 2, 3), weight=1)
 
-        self.preview = self.add_preview(container, height=8, show=False)
-        self.result_box = self.add_preview(container, height=12)
+        self.preview = self.add_preview(right_col, height=8, show=False)
+        self.result_box = self.add_preview(right_col, height=12)
         self.set_preview(self.preview, "Excel no cargado o sin previsualizar. Usa 'Previsualizar Excel'.")
 
-        self.progress_frame = self.add_progress_bar(container, label="Progreso")
+        self.progress_frame = self.add_progress_bar(right_col, label="Progreso")
 
-        self.log_text = self.add_collapsible_log(container, title="Logs de ejecución", height=12, service="ccma")
+        self.log_text = self.add_collapsible_log(right_col, title="Logs de ejecucion", height=15, service="ccma")
 
     def clear_logs(self) -> None:
         self.log_text.configure(state="normal")
