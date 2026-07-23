@@ -519,8 +519,11 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
         archivos_mc = glob.glob(f"{search_path}/**/extraido/*.csv", recursive=True)
         # RCEL: *.json
         archivos_json = glob.glob(f"{search_path}/**/RCEL/**/*.json", recursive=True)
-        # Note: glob might be slow if many files.
-        # External repo glob: f"{downloads_mc_path}/**/extraido/*.csv"
+        # Facturador: JSONs en carpeta específica (los pega el usuario manualmente)
+        facturador_dir = os.path.join("descargas", "Control_Monotributistas", "Facturador")
+        archivos_facturador: List[str] = []
+        if os.path.isdir(facturador_dir):
+            archivos_facturador = glob.glob(os.path.join(facturador_dir, "**", "*.json"), recursive=True)
 
         # Fallback if RCEL is not in RCEL subfolder (user might have changed path)
         if not archivos_json:
@@ -528,9 +531,12 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
              # Filter out non-RCEL jsons? Rcel jsons usually are named like the pdf.
              # We can rely on control logic to filter/match.
 
-        self._log_info_stage("proc", f"Encontrados: {len(archivos_mc)} CSVs (MC), {len(archivos_json)} JSONs (RCEL)")
+        self._log_info_stage("proc",
+            f"Encontrados: {len(archivos_mc)} CSVs (MC), {len(archivos_json)} JSONs (RCEL), "
+            f"{len(archivos_facturador)} JSONs (Facturador)"
+        )
 
-        if not archivos_mc and not archivos_json:
+        if not archivos_mc and not archivos_json and not archivos_facturador:
             self._log_error_stage("proc", "No se encontraron archivos para procesar.")
             return
 
@@ -548,6 +554,7 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
             output_file,
             log_fn=lambda msg: self._append_stage_log("proc", msg),
             html_output_dir=html_output_dir,
+            archivos_facturador=archivos_facturador if archivos_facturador else None,
         )
 
         self._set_stage_progress("proc", 1, 1)

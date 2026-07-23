@@ -588,8 +588,10 @@ def generar_html_general(todos_los_datos: List[Dict[str, Any]]) -> str:
             categ_col = f'<span style="{badge_inline}">{badge_txt}</span><span style="margin:0 4px;">⚠️</span><span style="{badge_comp_inline}">{cat_comp}</span>'
         else:
             categ_col = f'<span style="{badge_inline}">{badge_txt}</span>'
+        archivo_html = d.get("archivo_html", "")
+        cliente_link = f'<a href="reportes_individuales/{archivo_html}" style="color:#007bff;text-decoration:none;" target="_blank" rel="noopener">{d["cliente"]}</a>' if archivo_html else d["cliente"]
         table_rows += f"""<tr>
-    <td>{d["cliente"]}</td>
+    <td>{cliente_link}</td>
     <td>{d["cuit"]}</td>
     <td class="text-right monto">{_format_pesos(d["total_ventas"])}</td>
     <td class="text-right monto">{_format_pesos(d["total_compras"])}</td>
@@ -737,15 +739,16 @@ def exportar_reportes_html(
         cliente = str(row['Cliente'])
         cuit = str(int(row['Fin CUIT'])) if pd.notna(row['Fin CUIT']) else ""
 
-        datos = preparar_datos_individuales(consolidado, categorias, cliente, cuit)
-        datos["fecha_desde"] = fecha_desde_str
-        datos["fecha_hasta"] = fecha_hasta_str
-        todos_los_datos.append(datos)
-
         # Sanitize filename
         safe_name = re.sub(r'[^\w\-]', '_', cliente)[:80]
         safe_cuit = re.sub(r'[^\d]', '', cuit)[:11]
         filename = f"{safe_cuit}_{safe_name}.html" if safe_cuit else f"{safe_name}.html"
+
+        datos = preparar_datos_individuales(consolidado, categorias, cliente, cuit)
+        datos["fecha_desde"] = fecha_desde_str
+        datos["fecha_hasta"] = fecha_hasta_str
+        datos["archivo_html"] = filename  # para vínculo desde el reporte general
+        todos_los_datos.append(datos)
         filepath = os.path.join(individual_dir, filename)
 
         try:

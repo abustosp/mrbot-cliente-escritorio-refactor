@@ -23,6 +23,18 @@ from mrbot_app.formatos import (
 
 NOTAS_DE_CREDITO = [3, 8, 13, 21, 38, 43, 44, 48, 53, 90, 110, 112, 113, 114, 119, 203, 208, 213]
 
+# ─── Helper para navegación segura en JSONs anidados ─────────────────
+
+def get_nested(data: dict, path: List[str], default=None):
+    """Obtiene un valor anidado en un dict siguiendo una lista de keys."""
+    current = data
+    for key in path:
+        if isinstance(current, dict) and key in current:
+            current = current[key]
+        else:
+            return default
+    return current
+
 # ─── Funciones de categoría reutilizables ─────────────────────────────
 
 def obtener_max_ingresos_categoria(x: float, categorias: pd.DataFrame) -> float:
@@ -828,6 +840,178 @@ def leer_archivos_json_batch(archivos_json: List[str], log_fn: Optional[Callable
         return pd.DataFrame(registros)
     return pd.DataFrame()
 
+
+# ─── Lectura de JSONs del Facturador (AFIP WSFE) ──────────────────────
+
+# Campos a extraer del JSON de respuesta del Facturador
+FACTURADOR_FIELD_MAPPING = {
+    "CbteFch": ["Request", "FeCAEReq", "FeDetReq", "CbteFch"],
+    "Cuit": ["Request", "Auth", "Cuit"],
+    "Denominacion_Representado": ["Request", "Auth", "Denominacion_Representado"],
+    "CbteTipo": ["Request", "FeCAEReq", "FeCabReq", "CbteTipo"],
+    "PtoVta": ["Request", "FeCAEReq", "FeCabReq", "PtoVta"],
+    "CbteDesde": ["Request", "FeCAEReq", "FeDetReq", "CbteDesde"],
+    "CbteHasta": ["Request", "FeCAEReq", "FeDetReq", "CbteHasta"],
+    "DocTipo": ["Request", "FeCAEReq", "FeDetReq", "DocTipo"],
+    "DocNro": ["Request", "FeCAEReq", "FeDetReq", "DocNro"],
+    "Denominacion_receptor": ["Request", "FeCAEReq", "FeDetReq", "Denominacion_receptor"],
+    "FchServDesde": ["Request", "FeCAEReq", "FeDetReq", "FchServDesde"],
+    "FchServHasta": ["Request", "FeCAEReq", "FeDetReq", "FchServHasta"],
+    "ImpTotConc": ["Request", "FeCAEReq", "FeDetReq", "ImpTotConc"],
+    "ImpNeto": ["Request", "FeCAEReq", "FeDetReq", "ImpNeto"],
+    "ImpOpEx": ["Request", "FeCAEReq", "FeDetReq", "ImpOpEx"],
+    "ImpTrib": ["Request", "FeCAEReq", "FeDetReq", "ImpTrib"],
+    "ImpIVA": ["Request", "FeCAEReq", "FeDetReq", "ImpIVA"],
+    "ImpTotal": ["Request", "FeCAEReq", "FeDetReq", "ImpTotal"],
+    "MonId": ["Request", "FeCAEReq", "FeDetReq", "MonId"],
+}
+
+FACTURADOR_TESTING_PATH = ["Request", "Auth", "testing"]
+FACTURADOR_RESULTADO_PATH = [
+    "Response", "Envelope", "Body", "FECAESolicitarResponse",
+    "FECAESolicitarResult", "FeDetResp", "FECAEDetResponse", "Resultado"
+]
+FACTURADOR_CAE_PATH = [
+    "Response", "Envelope", "Body", "FECAESolicitarResponse",
+    "FECAESolicitarResult", "FeDetResp", "FECAEDetResponse", "CAE"
+]
+
+
+def _parse_yyyymmdd_to_datetime(yyyymmdd: Any):
+    """Convierte una fecha YYYYMMDD (str o int) a pd.Timestamp, o NaT si falla."""
+    if yyyymmdd is None:
+        return pd.NaT
+    s = str(yyyymmdd).strip()
+    if len(s) == 8 and s.isdigit():
+        try:
+            return pd.Timestamp(year=int(s[0:4]), month=int(s[4:6]), day=int(s[6:8]))
+        except (ValueError, TypeError):
+            return pd.NaT
+    return pd.NaT
+
+
+def leer_archivos_facturador_batch(
+    archivos_json: List[str],
+    log_fn: Optional[Callable[[str], None]] = None,
+) -> pd.DataFrame:
+    """
+    Lee archivos JSON de respuesta del Facturador (AFIP WSFE) y los convierte
+    en un DataFrame con las mismas columnas que el consolidado de MC.
+
+    Filtra:
+      - Solo comprobantes con testing=False (producción).
+      - Solo comprobantes con Resultado="A" (aprobados).
+    """
+    registros = []
+    for filepath in archivos_json:
+        if not os.path.isfile(filepath):
+            continue
+
+        filename = os.path.basename(filepath)
+
+        try:
+            with open(filepath, "r", encoding="utf-8-sig") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            _log_error(f"Error al leer JSON Facturador {filename}: {e}", log_fn)
+            continue
+
+        if not isinstance(data, dict):
+            continue
+
+        # ── Filtro: solo producción ──
+        testing = get_nested(data, FACTURADOR_TESTING_PATH)
+        if testing is not False:
+            continue
+
+        # ── Filtro: solo comprobantes aprobados ──
+        resultado = get_nested(data, FACTURADOR_RESULTADO_PATH)
+        if resultado != "A":
+            continue
+
+        # ── Extraer campos ──
+        cuit_emisor = get_nested(data, FACTURADOR_FIELD_MAPPING["Cuit"]) or ""
+        cuit_emisor_str = str(cuit_emisor).strip()
+
+        denominacion = get_nested(data, FACTURADOR_FIELD_MAPPING["Denominacion_Representado"]) or ""
+        # Si no hay denominación en el JSON, intentar extraer del nombre del directorio (CUIT)
+        if not denominacion or not str(denominacion).strip():
+            try:
+                parent = os.path.basename(os.path.dirname(filepath))
+                if parent and parent.isdigit():
+                    denominacion = parent
+            except Exception:
+                pass
+
+        cbte_tipo = get_nested(data, FACTURADOR_FIELD_MAPPING["CbteTipo"])
+        pto_vta = get_nested(data, FACTURADOR_FIELD_MAPPING["PtoVta"])
+        cbte_desde = get_nested(data, FACTURADOR_FIELD_MAPPING["CbteDesde"])
+        cbte_hasta = get_nested(data, FACTURADOR_FIELD_MAPPING["CbteHasta"])
+        doc_tipo = get_nested(data, FACTURADOR_FIELD_MAPPING["DocTipo"])
+        doc_nro = get_nested(data, FACTURADOR_FIELD_MAPPING["DocNro"]) or ""
+        denominacion_receptor = get_nested(data, FACTURADOR_FIELD_MAPPING["Denominacion_receptor"]) or ""
+
+        # Fechas
+        cbte_fch = _parse_yyyymmdd_to_datetime(get_nested(data, FACTURADOR_FIELD_MAPPING["CbteFch"]))
+        fch_serv_desde = _parse_yyyymmdd_to_datetime(get_nested(data, FACTURADOR_FIELD_MAPPING["FchServDesde"]))
+        fch_serv_hasta = _parse_yyyymmdd_to_datetime(get_nested(data, FACTURADOR_FIELD_MAPPING["FchServHasta"]))
+
+        # Importes (ya son float/int en el JSON)
+        imp_total = float(get_nested(data, FACTURADOR_FIELD_MAPPING["ImpTotal"]) or 0)
+        imp_tot_conc = float(get_nested(data, FACTURADOR_FIELD_MAPPING["ImpTotConc"]) or 0)
+        imp_neto = float(get_nested(data, FACTURADOR_FIELD_MAPPING["ImpNeto"]) or 0)
+        imp_op_ex = float(get_nested(data, FACTURADOR_FIELD_MAPPING["ImpOpEx"]) or 0)
+        imp_trib = float(get_nested(data, FACTURADOR_FIELD_MAPPING["ImpTrib"]) or 0)
+        imp_iva = float(get_nested(data, FACTURADOR_FIELD_MAPPING["ImpIVA"]) or 0)
+
+        mon_id = get_nested(data, FACTURADOR_FIELD_MAPPING["MonId"]) or "PES"
+        cae = get_nested(data, FACTURADOR_CAE_PATH) or ""
+
+        # ── Construir AUX (mismo formato que MC) ──
+        try:
+            aux = (
+                f"{int(cuit_emisor)}-{int(cbte_tipo):03d}-"
+                f"{int(pto_vta):05d}-{int(cbte_desde):08d}"
+            )
+        except (ValueError, TypeError):
+            aux = ""
+
+        registro = {
+            "Fecha de Emisión": cbte_fch,
+            "Tipo de Comprobante": int(cbte_tipo) if cbte_tipo is not None else 0,
+            "Punto de Venta": int(pto_vta) if pto_vta is not None else 0,
+            "Número Desde": int(cbte_desde) if cbte_desde is not None else 0,
+            "Número Hasta": int(cbte_hasta) if cbte_hasta is not None else 0,
+            "Cód. Autorización": str(cae),
+            "Tipo Cambio": 1,
+            "Moneda": str(mon_id),
+            "Imp. Neto Gravado Total": imp_neto,
+            "Imp. Neto No Gravado": imp_tot_conc,
+            "Imp. Op. Exentas": imp_op_ex,
+            "Otros Tributos": imp_trib,
+            "Total IVA": imp_iva,
+            "Imp. Total": imp_total,
+            "Nro. Doc. Receptor/Emisor": str(doc_nro),
+            "Denominación Receptor/Emisor": str(denominacion_receptor),
+            "Archivo": filename,
+            "CUIT Cliente": int(cuit_emisor) if cuit_emisor_str.isdigit() else 0,
+            "Fin CUIT": int(cuit_emisor) if cuit_emisor_str.isdigit() else 0,
+            "Cliente": str(denominacion).strip(),
+            "Tipo_MC": "Emitido",
+            "FchServDesde": fch_serv_desde,
+            "FchServHasta": fch_serv_hasta,
+        }
+        registros.append(registro)
+
+    if registros:
+        df = pd.DataFrame(registros)
+        _log_info(f"Facturador: {len(archivos_json)} archivos leídos, {len(df)} comprobantes aprobados.", log_fn)
+        return df
+
+    _log_info("Facturador: no se encontraron comprobantes aprobados (Resultado=A, testing=False).", log_fn)
+    return pd.DataFrame()
+
+
 def generar_reporte_control(
     archivos_mc: List[str],
     archivos_json: List[str],
@@ -835,6 +1019,7 @@ def generar_reporte_control(
     output_path: str,
     log_fn: Optional[Callable[[str], None]] = None,
     html_output_dir: Optional[str] = None,
+    archivos_facturador: Optional[List[str]] = None,
 ) -> None:
     """
     Core logic for generating the report.
@@ -865,8 +1050,23 @@ def generar_reporte_control(
         consolidado = leer_archivos_csv_batch(archivos_mc, log_fn)
         info_facturas_pdf = leer_archivos_json_batch(archivos_json, log_fn)
 
+        # ── Incorporar datos del Facturador (AFIP WSFE) ──
+        if archivos_facturador:
+            _log_info(f"Procesando {len(archivos_facturador)} archivos JSON del Facturador...", log_fn)
+            facturador_df = leer_archivos_facturador_batch(archivos_facturador, log_fn)
+            if not facturador_df.empty:
+                # El DataFrame del Facturador ya tiene las mismas columnas que el consolidado MC.
+                # Concatenar al consolidado (o crear consolidado si MC está vacío).
+                if consolidado.empty:
+                    consolidado = facturador_df
+                else:
+                    consolidado = pd.concat([consolidado, facturador_df], ignore_index=True)
+                _log_info(f"Facturador: {len(facturador_df)} registros incorporados al consolidado.", log_fn)
+            else:
+                _log_info("Facturador: sin registros válidos para incorporar.", log_fn)
+
         if consolidado.empty:
-            _log_info("No se encontraron datos en los archivos CSV (MC).", log_fn)
+            _log_info("No se encontraron datos en los archivos (MC, Facturador).", log_fn)
             return
 
         # Rename columns to shorter names for processing
@@ -941,6 +1141,15 @@ def generar_reporte_control(
         consolidado['Desde'] = consolidado['Desde'].fillna(consolidado['Fecha'])
         consolidado['Hasta'] = consolidado['Hasta'].fillna(consolidado['Fecha'])
 
+        # ── Corregir columnas específicas del Facturador ──
+        if 'FchServDesde' in consolidado.columns:
+            mask_fact = consolidado['FchServDesde'].notna()
+            if mask_fact.any():
+                consolidado.loc[mask_fact, 'Desde'] = consolidado.loc[mask_fact, 'FchServDesde']
+                consolidado.loc[mask_fact, 'Hasta'] = consolidado.loc[mask_fact, 'FchServHasta']
+                consolidado.loc[mask_fact, 'MC'] = 'MCE'
+                consolidado.loc[mask_fact, 'Cruzado'] = 'Si'
+
         # Billing period length now uses normalized Desde/Hasta columns.
         desde_facturacion = consolidado['Desde']
         hasta_facturacion = consolidado['Hasta']
@@ -1007,6 +1216,7 @@ def generar_reporte_control(
                 _log_error(traceback.format_exc(), log_fn)
 
         # Formatting Dates for export (Excel necesita strings)
+        consolidado.drop(['FchServDesde', 'FchServHasta'], axis=1, inplace=True, errors='ignore')
         for c in ['Desde', 'Hasta', 'Fecha', 'Fecha_Inicial_max', 'Fecha_Final_min']:
              consolidado[c] = consolidado[c].dt.strftime('%d/%m/%Y')
 
