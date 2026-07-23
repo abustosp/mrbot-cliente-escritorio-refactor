@@ -38,7 +38,8 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
         self.add_info_label(
             container,
             "Automatiza el control y recategorización descargando comprobantes MC y RCEL.\n"
-            "Requiere 'Categorias.xlsx' (escalas) y planilla de control.",
+            "Requiere 'Categorias.xlsx' (escalas) y planilla de control.\n"
+            "Facturador: pegá los JSON de respuesta en descargas/Control_Monotributistas/Facturador/ (se iteran subcarpetas, solo comprobantes aprobados con testing=False).",
         )
 
         # Excel Selection
