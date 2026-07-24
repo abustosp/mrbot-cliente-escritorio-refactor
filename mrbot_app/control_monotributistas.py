@@ -160,9 +160,6 @@ def preparar_datos_individuales(
             "categoria": str(row['Categoria']),
             "limite": float(row['Ingresos brutos']),
         })
-    # La última categoría es el límite máximo antes de exceder; no se muestra
-    # en el gráfico de escala para no confundir.
-    escala_categorias = escala_categorias[:-1]
 
     pct_limite = round((total_ventas / limite_categoria * 100), 1) if limite_categoria > 0 else 0
 
