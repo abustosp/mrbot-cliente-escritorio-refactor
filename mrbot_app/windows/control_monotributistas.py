@@ -3,28 +3,35 @@ import os
 import glob
 import threading
 import tkinter as tk
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from tkinter import ttk, messagebox, scrolledtext
 import pandas as pd
-from typing import Optional, Dict, Any, Callable, List
+from typing import Optional, Dict, Any, Callable, List, Tuple
 
-from mrbot_app.config import get_max_workers
+from mrbot_app.config import get_max_workers, CATEGORIAS_MONOTRIBUTO_URL
 from mrbot_app.files import open_with_default_app
 from mrbot_app.windows.base import BaseWindow
-from mrbot_app.windows.mixins import ExcelHandlerMixin
+from mrbot_app.windows.mixins import ExcelHandlerMixin, DateRangeHandlerMixin
 from mrbot_app.control_monotributistas import (
     procesar_descarga_mc,
     procesar_descarga_rcel,
     generar_reporte_control
 )
 from mrbot_app.constants import EXAMPLE_DIR
+from mrbot_app.servicios.categorias_monotributo import (
+    ensure_categorias_db,
+    obtener_info_categorias,
+    CATEGORIAS_DB_FILENAME,
+)
+from mrbot_app.helpers import make_today_str
 
-class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
+class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin):
     MODULE_DIR = "control_monotributistas"
 
     def __init__(self, master=None, config_provider=None, example_paths: Optional[Dict[str, str]] = None):
         super().__init__(master, title="Control Monotributistas", config_provider=config_provider)
         ExcelHandlerMixin.__init__(self)
+        DateRangeHandlerMixin.__init__(self)
         try:
             self.iconbitmap(os.path.join("bin", "ABP-blanco-en-fondo-negro.ico"))
         except Exception:
@@ -42,8 +49,19 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
             "Facturador: pegá los JSON de respuesta en descargas/Control_Monotributistas/Facturador/ (se iteran subcarpetas, solo comprobantes aprobados con testing=False).",
         )
 
+        # ─── Layout en dos columnas ─────────────────────────────────
+        columns_frame = ttk.Frame(container)
+        columns_frame.pack(fill="both", expand=True)
+        columns_frame.columnconfigure(0, weight=1)
+        columns_frame.columnconfigure(1, weight=1)
+
+        left_col = ttk.Frame(columns_frame)
+        left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        right_col = ttk.Frame(columns_frame)
+        right_col.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+
         # Excel Selection
-        file_frame = ttk.LabelFrame(container, text="Archivo de Planilla")
+        file_frame = ttk.LabelFrame(left_col, text="Archivo de Planilla")
         file_frame.pack(fill="x", pady=8)
 
         btn_frame = ttk.Frame(file_frame)
@@ -57,11 +75,34 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
         self.lbl_excel = ttk.Label(file_frame, text="Ningún archivo seleccionado")
         self.lbl_excel.pack(anchor="w", padx=8, pady=4)
 
-        self.preview = self.add_preview(container, height=6, show=False)
+        self.preview = self.add_preview(left_col, height=6, show=False)
         self.set_preview(self.preview, "Selecciona un Excel para ver la previsualización.")
 
+        # ─── Rango a Analizar ───────────────────────────────────────
+        rango_frame = ttk.LabelFrame(left_col, text="Rango a Analizar")
+        rango_frame.pack(fill="x", pady=8)
+        self.add_date_range_frame(rango_frame)
+        self.lbl_rango_error = ttk.Label(rango_frame, text="", foreground="red")
+        self.lbl_rango_error.pack(anchor="w", padx=8, pady=(0, 4))
+
+        # ─── Base de Datos de Categorías ────────────────────────────
+        cat_frame = ttk.LabelFrame(left_col, text="Base de Datos de Categorías")
+        cat_frame.pack(fill="x", pady=8)
+
+        self.cat_status_var = tk.StringVar(value="Verificando...")
+        lbl_cat_status = ttk.Label(cat_frame, textvariable=self.cat_status_var, wraplength=450)
+        lbl_cat_status.pack(anchor="w", padx=8, pady=4)
+
+        cat_btn_frame = ttk.Frame(cat_frame)
+        cat_btn_frame.pack(fill="x", pady=4, padx=8)
+
+        ttk.Button(cat_btn_frame, text="Actualizar Base de Datos", command=self._actualizar_categorias).pack(side="left", padx=4)
+        ttk.Button(cat_btn_frame, text="Abrir Carpeta de Categorías", command=self._abrir_carpeta_categorias).pack(side="left", padx=4)
+
+        self._refrescar_estado_categorias()
+
         # Actions
-        actions_frame = ttk.LabelFrame(container, text="Acciones")
+        actions_frame = ttk.LabelFrame(right_col, text="Acciones")
         actions_frame.pack(fill="x", pady=8)
 
         ttk.Button(actions_frame, text="1. Descargar Mis Comprobantes", command=self.descargar_mc).pack(fill="x", padx=8, pady=4)
@@ -92,8 +133,8 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
         self._stage_abort_events = {k: threading.Event() for k in self._stage_definitions}
         self._stage_abort_buttons: Dict[str, ttk.Button] = {}
 
-        self._build_stage_progress_section(container)
-        self._build_stage_log_buttons(container)
+        self._build_stage_progress_section(right_col)
+        self._build_stage_log_buttons(right_col)
 
     def _build_stage_progress_section(self, parent) -> None:
         progress_frame = ttk.LabelFrame(parent, text="Progreso por etapa")
@@ -480,40 +521,67 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
             abort_check=self._stage_abort_events["rcel"].is_set,
         )
 
+    def _parse_date_var(self, var: tk.StringVar) -> Optional[date]:
+        raw = var.get().strip()
+        for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(raw, fmt).date()
+            except ValueError:
+                continue
+        return None
+
+    def _validar_rango_fechas(self) -> Tuple[Optional[date], Optional[date], Optional[str]]:
+        desde = self._parse_date_var(self.desde_var)
+        hasta = self._parse_date_var(self.hasta_var)
+        if desde is None or hasta is None:
+            return None, None, "Formato de fecha inválido. Usá DD/MM/AAAA."
+        if desde > hasta:
+            return None, None, "La fecha 'Desde' no puede ser posterior a 'Hasta'."
+        diff = (hasta.year - desde.year) * 12 + (hasta.month - desde.month)
+        if diff > 12 or (diff == 12 and hasta.day > desde.day):
+            return None, None, "El período máximo es de 12 meses."
+        return desde, hasta, None
+
+    def _determinar_categoria_path(self) -> Optional[str]:
+        db_path = os.path.join(os.getcwd(), CATEGORIAS_DB_FILENAME)
+        if os.path.exists(db_path):
+            return db_path
+        xlsx_path = self.example_paths.get("Categorias.xlsx", os.path.join(EXAMPLE_DIR, "Categorias.xlsx"))
+        if not os.path.exists(xlsx_path):
+            xlsx_path = "Categorias.xlsx"
+        if os.path.exists(xlsx_path):
+            return xlsx_path
+        return None
+
     def procesar_datos(self) -> None:
-        # Check Categorias.xlsx
-        # Prefer the one in examples/Categorias.xlsx if exists, else check root
-        cat_path = self.example_paths.get("Categorias.xlsx", os.path.join(EXAMPLE_DIR, "Categorias.xlsx"))
-        if not os.path.exists(cat_path):
-            cat_path = "Categorias.xlsx" # Check root
-            if not os.path.exists(cat_path):
-                 messagebox.showerror("Error", "No se encontró 'Categorias.xlsx'.\nGenera los ejemplos primero.")
-                 return
+        desde, hasta, error = self._validar_rango_fechas()
+        if error:
+            self.lbl_rango_error.configure(text=error)
+            return
+        self.lbl_rango_error.configure(text="")
+
+        cat_path = self._determinar_categoria_path()
+        if cat_path is None:
+            messagebox.showerror(
+                "Error",
+                "No se encontró base de categorías.\n"
+                "Usá 'Actualizar Base de Datos' para descargarla, "
+                "o colocá 'Categorias.xlsx' en la raíz del proyecto."
+            )
+            return
 
         if messagebox.askyesno("Confirmar", "¿Procesar datos descargados y generar reporte?"):
             self._clear_stage_logs("proc")
             self._set_stage_progress("proc", 0, 1)
             self._log_info_stage("proc", "INICIADOR: Control Monotributistas | accion=Generar Reporte")
-
-            # Use 'descargas/RCEL' and 'descargas' generally as search paths?
-            # Or assume paths from Excel?
-            # The control function expects list of files.
-            # We need to find them.
-
-            # We can scan the whole 'descargas' folder or use specific paths if we knew them.
-            # Since `procesar_descarga_mc` defaults to `descargas/mis_compobantes` (fallback) or user defined.
-            # And `procesar_descarga_rcel` to `descargas/RCEL`.
-            # We'll scan recursively in 'descargas' or '.'?
-            # External repo scans `DOWNLOADS_MC_PATH` and `DOWNLOADS_RCEL_PATH`.
-
-            # Let's assume standard paths or ask user?
-            # Better: Scan 'descargas' directory recursively.
+            self._log_info_stage("proc", f"Rango fechas control: {desde} - {hasta}")
+            self._log_info_stage("proc", f"Categorías desde: {cat_path}")
 
             search_path = "descargas" if os.path.exists("descargas") else "."
 
-            self._run_stage_in_thread("proc", self._worker_process, cat_path, search_path)
+            self._run_stage_in_thread("proc", self._worker_process, cat_path, search_path, desde, hasta)
 
-    def _worker_process(self, cat_path, search_path):
+    def _worker_process(self, cat_path, search_path, desde: date, hasta: date):
         self._log_info_stage("proc", f"Buscando archivos en: {search_path}")
 
         # MC: extraido/*.csv
@@ -529,8 +597,6 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
         # Fallback if RCEL is not in RCEL subfolder (user might have changed path)
         if not archivos_json:
              archivos_json = glob.glob(f"{search_path}/**/*.json", recursive=True)
-             # Filter out non-RCEL jsons? Rcel jsons usually are named like the pdf.
-             # We can rely on control logic to filter/match.
 
         self._log_info_stage("proc",
             f"Encontrados: {len(archivos_mc)} CSVs (MC), {len(archivos_json)} JSONs (RCEL), "
@@ -548,6 +614,8 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
         output_file = os.path.join(output_dir, "Reporte Recategorizaciones de Monotributistas.xlsx")
         html_output_dir = os.path.join(output_dir, "reportes_html")
 
+        fecha_ini_ts = pd.Timestamp(desde)
+        fecha_fin_ts = pd.Timestamp(hasta)
         generar_reporte_control(
             archivos_mc,
             archivos_json,
@@ -556,6 +624,8 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
             log_fn=lambda msg: self._append_stage_log("proc", msg),
             html_output_dir=html_output_dir,
             archivos_facturador=archivos_facturador if archivos_facturador else None,
+            fecha_inicial=fecha_ini_ts,
+            fecha_final=fecha_fin_ts,
         )
 
         self._set_stage_progress("proc", 1, 1)
@@ -577,3 +647,49 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin):
                 "No se encontró el reporte general HTML.\n"
                 "Primero debes ejecutar el paso 3 (Procesar y Generar Reporte).",
             )
+
+    # ─── Gestión de Base de Datos de Categorías ─────────────────────
+
+    def _refrescar_estado_categorias(self) -> None:
+        info = obtener_info_categorias()
+        if not info["descargada"]:
+            self.cat_status_var.set(
+                "Estado: No descargada. Presioná 'Actualizar Base de Datos' para descargar la última versión."
+            )
+            return
+        parts = ["Estado: Descargada"]
+        if info.get("vigencia_desde") and info.get("vigencia_hasta"):
+            parts.append(
+                f"válida {info['vigencia_desde']} - {info['vigencia_hasta']}"
+            )
+        if info.get("cantidad_categorias"):
+            parts.append(f"({info['cantidad_categorias']} categorías)")
+        if info.get("ultima_actualizacion"):
+            parts.append(
+                f"Actualizada: {info['ultima_actualizacion'].strftime('%d/%m/%Y %H:%M')}"
+            )
+        self.cat_status_var.set(" | ".join(parts))
+
+    def _actualizar_categorias(self) -> None:
+        if not messagebox.askyesno("Confirmar", "¿Descargar la última versión de la base de datos de categorías?"):
+            return
+        self.cat_status_var.set("Descargando...")
+        t = threading.Thread(target=self._worker_actualizar_categorias, daemon=True)
+        t.start()
+
+    def _worker_actualizar_categorias(self) -> None:
+        try:
+            self._log_info_stage("proc", "Iniciando descarga de base de datos de categorías...")
+            ensure_categorias_db(force=True)
+            self._log_info_stage("proc", "Base de datos de categorías actualizada exitosamente.")
+            self.after(0, self._refrescar_estado_categorias)
+            self.after(0, lambda: messagebox.showinfo("Éxito", "Base de datos de categorías actualizada."))
+        except Exception as e:
+            self._log_error_stage("proc", f"Error actualizando categorías: {e}")
+            self.after(0, lambda: self.cat_status_var.set(f"Error: {e}"))
+            self.after(0, lambda: messagebox.showerror("Error", f"No se pudo actualizar la base de datos:\n{e}"))
+
+    def _abrir_carpeta_categorias(self) -> None:
+        folder = os.path.dirname(os.path.abspath(CATEGORIAS_DB_FILENAME)) or "."
+        if open_with_default_app(folder):
+            self._log_info_stage("proc", f"Abriendo carpeta: {folder}")

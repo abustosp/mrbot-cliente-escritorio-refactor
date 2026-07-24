@@ -42,6 +42,7 @@ DEFAULT_POST_TIMEOUT = _get_env_int("TIMEOUT_POST", 120)
 DEFAULT_GET_TIMEOUT = _get_env_int("TIMEOUT_GET", 60)
 DEFAULT_MAX_WORKERS = _get_env_int("MAX_WORKERS_MRBOT_API", 1)
 DEFAULT_NOTIFICACION_MESSAGEBOX = _get_env_bool("NOTIFICACION_MESSAGEBOX", False)
+CATEGORIAS_MONOTRIBUTO_URL = os.getenv("CATEGORIAS_MONOTRIBUTO_URL", "https://mrbot.com.ar/static/file/categorias_monotributo.db")
 
 
 def reload_env_defaults() -> tuple[str, str, str]:

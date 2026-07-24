@@ -4,7 +4,7 @@ import glob
 import re
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional, Callable, Dict, Any, List, Tuple
 from urllib.parse import urlparse, unquote
 
@@ -1020,6 +1020,8 @@ def generar_reporte_control(
     log_fn: Optional[Callable[[str], None]] = None,
     html_output_dir: Optional[str] = None,
     archivos_facturador: Optional[List[str]] = None,
+    fecha_inicial: Optional[pd.Timestamp] = None,
+    fecha_final: Optional[pd.Timestamp] = None,
 ) -> None:
     """
     Core logic for generating the report.
@@ -1033,17 +1035,24 @@ def generar_reporte_control(
         return
 
     try:
-        categorias = pd.read_excel(path_categorias, sheet_name='Categorias')
-
-        # Read dates
-        # control.py logic: sheet 'Rango de Fechas', A2 and B2.
-        # pandas read_excel with header=None, skiprows=1 means A2 is at iloc[0,0] if we read col 0.
-        fecha_inicial_raw = pd.read_excel(path_categorias, sheet_name='Rango de Fechas', header=None, skiprows=1, usecols=[0]).iloc[0,0]
-        fecha_final_raw = pd.read_excel(path_categorias, sheet_name='Rango de Fechas', header=None, skiprows=1, usecols=[1]).iloc[0,0]
-
-        # Ensure datetime
-        fecha_inicial = pd.to_datetime(fecha_inicial_raw, dayfirst=True)
-        fecha_final = pd.to_datetime(fecha_final_raw, dayfirst=True)
+        es_db = path_categorias.lower().endswith('.db')
+        if es_db:
+            from mrbot_app.servicios.categorias_monotributo import cargar_categorias
+            ref_date = fecha_final.date() if fecha_final is not None else date.today()
+            categorias = cargar_categorias(ref_date)
+            if fecha_inicial is None:
+                fecha_inicial = pd.Timestamp(ref_date.replace(month=ref_date.month - 11, day=1))
+                _log_info(f"fecha_inicial no proporcionada, usando por defecto: {fecha_inicial.date()}", log_fn)
+            if fecha_final is None:
+                fecha_final = pd.Timestamp(ref_date)
+                _log_info(f"fecha_final no proporcionada, usando por defecto: {fecha_final.date()}", log_fn)
+        else:
+            categorias = pd.read_excel(path_categorias, sheet_name='Categorias')
+            if fecha_inicial is None or fecha_final is None:
+                fecha_inicial_raw = pd.read_excel(path_categorias, sheet_name='Rango de Fechas', header=None, skiprows=1, usecols=[0]).iloc[0,0]
+                fecha_final_raw = pd.read_excel(path_categorias, sheet_name='Rango de Fechas', header=None, skiprows=1, usecols=[1]).iloc[0,0]
+                fecha_inicial = pd.to_datetime(fecha_inicial_raw, dayfirst=True)
+                fecha_final = pd.to_datetime(fecha_final_raw, dayfirst=True)
 
         _log_info(f"Rango fechas control: {fecha_inicial.date()} - {fecha_final.date()}", log_fn)
 
