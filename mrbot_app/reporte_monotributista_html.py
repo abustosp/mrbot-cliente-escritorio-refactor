@@ -12,8 +12,6 @@ from typing import Any, Callable, Dict, List, Optional
 import pandas as pd
 
 from mrbot_app.control_monotributistas import (
-    obtener_categoria,
-    obtener_max_ingresos_categoria,
     preparar_datos_individuales,
 )
 

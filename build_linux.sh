@@ -44,6 +44,7 @@ icon_path="$project_root/bin/ABP-blanco-en-fondo-negro.ico"
   --specpath "$work_path" \
   --name "mrbot" \
   --icon "$icon_path" \
+  --hidden-import mrbot_app.reporte_monotributista_html \
   "$project_root/mrbot.py"
 
 echo "=== Generando examples en carpeta temporal ==="

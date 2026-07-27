@@ -41,6 +41,7 @@ $iconPath = Join-Path $projectRoot "bin\ABP-blanco-en-fondo-negro.ico"
   --specpath "$workPath" `
   --name "mrbot" `
   --icon "$iconPath" `
+  --hidden-import mrbot_app.reporte_monotributista_html `
   ".\mrbot.py"
 
 if (-not $?) {
