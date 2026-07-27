@@ -597,6 +597,11 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandl
         # Fallback if RCEL is not in RCEL subfolder (user might have changed path)
         if not archivos_json:
              archivos_json = glob.glob(f"{search_path}/**/*.json", recursive=True)
+             # Excluir response_log.json (logs de descarga de MC) y otros no-RCEL
+             archivos_json = [
+                 f for f in archivos_json
+                 if os.path.basename(f) != "response_log.json"
+             ]
 
         self._log_info_stage("proc",
             f"Encontrados: {len(archivos_mc)} CSVs (MC), {len(archivos_json)} JSONs (RCEL), "

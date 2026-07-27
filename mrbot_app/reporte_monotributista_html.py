@@ -281,7 +281,7 @@ def generar_html_individual(datos: Dict[str, Any]) -> str:
         <div class="card card-info card-outline">
             <div class="card-header"><h3 class="card-title">📈 Compras vs Ventas · Acumulado</h3></div>
             <div class="card-body">
-                {f"""<div class="alert alert-warning">⚠️ Las <strong>compras</strong> superan a las <strong>ventas</strong> en este período. Diferencia: {_format_pesos(abs(total_c - total_v))}</div>""" if total_c > total_v else ""}
+                {f'''<div class="alert alert-warning">⚠️ Las <strong>compras</strong> superan a las <strong>ventas</strong> en este período. Diferencia: {_format_pesos(abs(total_c - total_v))}</div>''' if total_c > total_v else ""}
                 <div class="chart-container"><canvas id="chartAcumulado"></canvas></div>
             </div>
         </div>

@@ -806,6 +806,10 @@ def leer_archivos_json_batch(archivos_json: List[str], log_fn: Optional[Callable
     for factura in archivos_json:
         if not os.path.isfile(factura):
             continue
+        # Saltar archivos que no son RCEL (response_log.json, etc.)
+        nombre = os.path.basename(factura)
+        if nombre in ("response_log.json",):
+            continue
         try:
             with open(factura, 'r', encoding='utf-8-sig') as f:
                 data_dict = json.load(f)
@@ -1127,9 +1131,18 @@ def generar_reporte_control(
             consolidado['Número Desde'].astype(int).astype(str).str.zfill(8)
         )
 
-        if not info_facturas_pdf.empty:
-             consolidado = pd.merge(consolidado, info_facturas_pdf[['AUX', 'Desde', 'Hasta', 'Archivo PDF']], how='left', on='AUX')
+        columnas_rcel_requeridas = ['AUX', 'Desde', 'Hasta', 'Archivo PDF']
+        tiene_rcel = (
+            not info_facturas_pdf.empty
+            and all(c in info_facturas_pdf.columns for c in columnas_rcel_requeridas)
+        )
+
+        if tiene_rcel:
+             consolidado = pd.merge(consolidado, info_facturas_pdf[columnas_rcel_requeridas], how='left', on='AUX')
         else:
+             if not info_facturas_pdf.empty:
+                 _log_info("Archivos JSON encontrados pero sin columnas RCEL esperadas (AUX, Desde, Hasta, Archivo PDF). "
+                           "Se ignorarán y se usará la fecha de emisión como fallback.", log_fn)
              consolidado['Desde'] = pd.NaT
              consolidado['Hasta'] = pd.NaT
              consolidado['Archivo PDF'] = None
@@ -1206,6 +1219,7 @@ def generar_reporte_control(
         if html_output_dir:
             _log_info("Generando reportes HTML con gráficos...", log_fn)
             try:
+                from mrbot_app.reporte_monotributista_html import exportar_reportes_html
                 exportar_reportes_html(
                     consolidado=consolidado,
                     categorias=categorias,
@@ -1255,5 +1269,3 @@ def generar_reporte_control(
         import traceback
         _log_error(traceback.format_exc(), log_fn)
 
-
-from mrbot_app.reporte_monotributista_html import exportar_reportes_html

@@ -55,7 +55,9 @@ if (Test-Path $tempExamplesPath) {
     Remove-Item $tempExamplesPath -Force -Recurse
 }
 
-$generateExamplesCode = @"
+# Escribir el script Python en un archivo temporal para evitar problemas de escaping de comillas
+$tempPyScript = Join-Path $workPath "_gen_examples.py"
+@"
 import os
 import sys
 
@@ -65,13 +67,13 @@ sys.path.insert(0, project_root)
 from mrbot_app.examples import ensure_example_excels
 
 ensure_example_excels()
-"@
+"@ | Out-File -FilePath $tempPyScript -Encoding UTF8
 
 Push-Location $workPath
 $previousProjectRoot = $env:PROJECT_ROOT
 try {
     $env:PROJECT_ROOT = $projectRoot
-    & $pythonCmd -c $generateExamplesCode
+    & $pythonCmd $tempPyScript
     if (-not $?) {
         throw "Error generando los examples en carpeta temporal"
     }
@@ -83,6 +85,7 @@ finally {
     else {
         Remove-Item Env:PROJECT_ROOT -ErrorAction SilentlyContinue
     }
+    Remove-Item $tempPyScript -ErrorAction SilentlyContinue
     Pop-Location
 }
 
