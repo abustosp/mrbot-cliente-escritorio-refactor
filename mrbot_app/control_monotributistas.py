@@ -1206,7 +1206,6 @@ def generar_reporte_control(
         if html_output_dir:
             _log_info("Generando reportes HTML con gráficos...", log_fn)
             try:
-                from mrbot_app.reporte_monotributista_html import exportar_reportes_html
                 exportar_reportes_html(
                     consolidado=consolidado,
                     categorias=categorias,
@@ -1255,3 +1254,6 @@ def generar_reporte_control(
         _log_error(f"Error generando reporte: {e}", log_fn)
         import traceback
         _log_error(traceback.format_exc(), log_fn)
+
+
+from mrbot_app.reporte_monotributista_html import exportar_reportes_html
