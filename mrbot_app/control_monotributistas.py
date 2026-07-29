@@ -1024,12 +1024,14 @@ def generar_reporte_control(
     fecha_inicial: Optional[pd.Timestamp] = None,
     fecha_final: Optional[pd.Timestamp] = None,
     categorias: Optional[pd.DataFrame] = None,
+    logo_b64: Optional[str] = None,
 ) -> None:
     """
     Core logic for generating the report.
     Si html_output_dir se proporciona, también genera reportes HTML individuales
     y un reporte general con gráficos comparativos.
     Si categorias se proporciona, se usa directamente en lugar de cargarla del archivo.
+    Si logo_b64 se proporciona, se incrusta en la esquina superior derecha de los reportes HTML.
     """
     _log_info("Iniciando generación de reporte...", log_fn)
 
@@ -1235,6 +1237,7 @@ def generar_reporte_control(
                     fecha_inicial=fecha_inicial,
                     fecha_final=fecha_final,
                     log_fn=log_fn,
+                    logo_b64=logo_b64,
                 )
                 _log_info(f"Reportes HTML generados en: {html_output_dir}", log_fn)
             except Exception as html_e:

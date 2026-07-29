@@ -46,11 +46,15 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans
 /* Header estilo ERP */
 .header {{ background: linear-gradient(135deg, #002060 0%, #003d99 100%);
           color: #fff; padding: 22px 28px; border-radius: 8px; margin-bottom: 20px;
-          box-shadow: 0 2px 6px rgba(0,0,0,0.12); }}
+          box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+          display: flex; align-items: center; justify-content: space-between; }}
+.header-text {{ flex: 1; min-width: 0; }}
 .header h1 {{ font-size: 1.35rem; margin: 0 0 3px 0; font-weight: 600; }}
 .header .meta {{ font-size: 0.88rem; opacity: 0.88; }}
 .header .categoria-badge {{ display: inline-block; margin-top: 6px;
     padding: 4px 12px; border-radius: 20px; font-weight: 600; font-size: 0.85rem; }}
+.header-logo {{ flex-shrink: 0; margin-left: 20px; }}
+.header-logo img {{ max-height: 65px; width: auto; object-fit: contain; display: block; }}
 .badge-excedido {{ background: #dc3545; color: #fff; }}
 .badge-normal {{ background: #28a745; color: #fff; }}
 .badge-advertencia {{ background: #ffc107; color: #212529; }}
@@ -145,7 +149,7 @@ def _format_pesos(valor: float) -> str:
     return f"$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-def generar_html_individual(datos: Dict[str, Any]) -> str:
+def generar_html_individual(datos: Dict[str, Any], logo_b64: Optional[str] = None) -> str:
     """Genera el HTML completo para un contribuyente individual."""
     cliente = datos["cliente"]
     cuit = datos["cuit"]
@@ -214,18 +218,23 @@ def generar_html_individual(datos: Dict[str, Any]) -> str:
     limite_str = _format_pesos(limite) if limite > 0 else "—"
     pct_str = f"{pct:.1f}%" if limite > 0 else "—"
 
+    logo_tag = f'<div class="header-logo"><img src="data:image/png;base64,{logo_b64}" alt="Logo"></div>' if logo_b64 else ""
+
     return _html_header(f"Reporte {cliente} · Monotributo") + f"""
 <div class="header">
-    <h1>{cliente}</h1>
-    <p class="meta">
-        CUIT {cuit} · Período: {fecha_desde} a {fecha_hasta} ·
-        Ventas totales: {_format_pesos(total_v)} ·
-        Compras totales: {_format_pesos(total_c)}
-    </p>
-    <div>
-        <span class="categoria-badge {badge}">{badge_text} · Límite: {limite_str}</span>
-        <span class="categoria-badge badge-normal" style="margin-left:8px">{pct_str} del límite</span>
+    <div class="header-text">
+        <h1>{cliente}</h1>
+        <p class="meta">
+            CUIT {cuit} · Período: {fecha_desde} a {fecha_hasta} ·
+            Ventas totales: {_format_pesos(total_v)} ·
+            Compras totales: {_format_pesos(total_c)}
+        </p>
+        <div>
+            <span class="categoria-badge {badge}">{badge_text} · Límite: {limite_str}</span>
+            <span class="categoria-badge badge-normal" style="margin-left:8px">{pct_str} del límite</span>
+        </div>
     </div>
+    {logo_tag}
 </div>
 
 <!-- Fila 1: Evolución Mensual -->
@@ -530,7 +539,7 @@ def _cat_color(categoria: str) -> str:
     return f"hsl(210, 70%, {lightness:.0f}%)"
 
 
-def generar_html_general(todos_los_datos: List[Dict[str, Any]]) -> str:
+def generar_html_general(todos_los_datos: List[Dict[str, Any]], logo_b64: Optional[str] = None) -> str:
     """Genera el HTML del reporte general con tabla resumen y gráficos."""
     total_contribuyentes = len(todos_los_datos)
     total_ventas_global = sum(d["total_ventas"] for d in todos_los_datos)
@@ -598,15 +607,20 @@ def generar_html_general(todos_los_datos: List[Dict[str, Any]]) -> str:
     <td class="text-center">{pct_str}</td>
 </tr>"""
 
+    logo_tag = f'<div class="header-logo"><img src="data:image/png;base64,{logo_b64}" alt="Logo"></div>' if logo_b64 else ""
+
     return _html_header("Reporte General · Control Monotributistas") + f"""
 <div class="header">
-    <h1>Reporte General · Control Monotributistas</h1>
-    <p class="meta">
-        {total_contribuyentes} contribuyentes · Período: {fecha_desde} a {fecha_hasta} ·
-        Ventas totales: {_format_pesos(total_ventas_global)} ·
-        Compras totales: {_format_pesos(total_compras_global)} ·
-        {excedidos} excedido(s)
-    </p>
+    <div class="header-text">
+        <h1>Reporte General · Control Monotributistas</h1>
+        <p class="meta">
+            {total_contribuyentes} contribuyentes · Período: {fecha_desde} a {fecha_hasta} ·
+            Ventas totales: {_format_pesos(total_ventas_global)} ·
+            Compras totales: {_format_pesos(total_compras_global)} ·
+            {excedidos} excedido(s)
+        </p>
+    </div>
+    {logo_tag}
 </div>
 
 <div class="chart-grid">
@@ -687,6 +701,7 @@ def exportar_reportes_html(
     fecha_inicial: Optional[pd.Timestamp] = None,
     fecha_final: Optional[pd.Timestamp] = None,
     log_fn: Optional[Callable[[str], None]] = None,
+    logo_b64: Optional[str] = None,
 ) -> List[str]:
     """
     Genera reportes HTML individuales (uno por contribuyente) y un reporte general.
@@ -698,6 +713,7 @@ def exportar_reportes_html(
         fecha_inicial: Fecha de inicio del período (filtra el consolidado).
         fecha_final: Fecha de fin del período (filtra el consolidado).
         log_fn: Función de logging.
+        logo_b64: Imagen de logo en base64 (opcional).
 
     Returns:
         Lista de rutas absolutas de los archivos generados.
@@ -750,7 +766,7 @@ def exportar_reportes_html(
         filepath = os.path.join(individual_dir, filename)
 
         try:
-            html_content = generar_html_individual(datos)
+            html_content = generar_html_individual(datos, logo_b64)
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(html_content)
             rutas_generadas.append(filepath)
@@ -764,7 +780,7 @@ def exportar_reportes_html(
     if todos_los_datos:
         general_path = os.path.join(output_dir, "reporte_general.html")
         try:
-            html_general = generar_html_general(todos_los_datos)
+            html_general = generar_html_general(todos_los_datos, logo_b64)
             with open(general_path, 'w', encoding='utf-8') as f:
                 f.write(html_general)
             rutas_generadas.append(general_path)

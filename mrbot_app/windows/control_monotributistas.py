@@ -2,9 +2,10 @@ import concurrent.futures
 import os
 import glob
 import threading
+import base64
 import tkinter as tk
 from datetime import date, datetime, timedelta
-from tkinter import ttk, messagebox, scrolledtext
+from tkinter import ttk, messagebox, scrolledtext, filedialog
 import pandas as pd
 from typing import Optional, Dict, Any, Callable, List, Tuple
 
@@ -38,6 +39,7 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandl
         except Exception:
             pass
         self.example_paths = example_paths or {}
+        self.logo_b64: Optional[str] = None
 
         container = ttk.Frame(self, padding=10)
         container.pack(fill="both", expand=True)
@@ -101,6 +103,19 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandl
         ttk.Button(cat_btn_frame, text="Abrir Carpeta de Categorías", command=self._abrir_carpeta_categorias).pack(side="left", padx=4)
 
         self._refrescar_estado_categorias()
+
+        # Logo (opcional)
+        logo_frame = ttk.LabelFrame(left_col, text="Logo (opcional)")
+        logo_frame.pack(fill="x", pady=8)
+
+        logo_btn_frame = ttk.Frame(logo_frame)
+        logo_btn_frame.pack(fill="x", pady=4, padx=8)
+
+        ttk.Button(logo_btn_frame, text="Seleccionar Logo", command=self._seleccionar_logo).pack(side="left", padx=4)
+        ttk.Button(logo_btn_frame, text="Quitar Logo", command=self._quitar_logo).pack(side="left", padx=4)
+
+        self.lbl_logo = ttk.Label(logo_frame, text="Sin logo seleccionado", wraplength=450)
+        self.lbl_logo.pack(anchor="w", padx=8, pady=(0, 6))
 
         # Actions
         actions_frame = ttk.LabelFrame(right_col, text="Acciones")
@@ -307,6 +322,28 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandl
             for line in lines
         )
         return formatted + "\n"
+
+    def _seleccionar_logo(self) -> None:
+        ruta = filedialog.askopenfilename(
+            title="Seleccionar logo",
+            filetypes=[("Imágenes", "*.png *.jpg *.jpeg *.gif *.bmp *.webp"), ("Todos", "*.*")],
+        )
+        if not ruta:
+            return
+        try:
+            with open(ruta, "rb") as f:
+                datos_b64 = base64.b64encode(f.read()).decode("utf-8")
+            self.logo_b64 = datos_b64
+            nombre = os.path.basename(ruta)
+            self.lbl_logo.configure(text=nombre)
+            self._log_info_stage("proc", f"Logo cargado: {nombre}")
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo cargar el logo:\n{e}")
+
+    def _quitar_logo(self) -> None:
+        self.logo_b64 = None
+        self.lbl_logo.configure(text="Sin logo seleccionado")
+        self._log_info_stage("proc", "Logo eliminado")
 
     def _log_info_stage(self, stage: str, message: str) -> None:
         self._append_stage_log(stage, f"INFO: {message}")
@@ -633,6 +670,7 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandl
             archivos_facturador=archivos_facturador if archivos_facturador else None,
             fecha_inicial=fecha_ini_ts,
             fecha_final=fecha_fin_ts,
+            logo_b64=self.logo_b64,
         )
 
         self._set_stage_progress("proc", 1, 1)
@@ -741,6 +779,7 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandl
             fecha_inicial=fecha_ini_ts,
             fecha_final=fecha_fin_ts,
             categorias=categorias_siguiente,
+            logo_b64=self.logo_b64,
         )
 
         self._set_stage_progress("proc", 1, 1)
