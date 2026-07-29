@@ -49,6 +49,29 @@ def cargar_categorias(
     result = result.rename(columns={"categoria": "Categoria", "ingresos_brutos": "Ingresos brutos"})
     return result
 
+def cargar_categorias_siguiente(
+    fecha_referencia: Optional[date] = None,
+) -> pd.DataFrame:
+    ensure_categorias_db()
+    db_path = _get_db_path()
+    conn = sqlite3.connect(str(db_path))
+    df = pd.read_sql_query("SELECT * FROM categorias", conn)
+    conn.close()
+    if "categoria" not in df.columns or "ingresos_brutos" not in df.columns:
+        raise ValueError("La base de datos de categorías no tiene las columnas esperadas (categoria, ingresos_brutos)")
+    if fecha_referencia is not None and "vigencia_desde" in df.columns:
+        df["vigencia_desde"] = pd.to_datetime(df["vigencia_desde"], format="%d/%m/%Y", errors="coerce")
+        ref = pd.Timestamp(fecha_referencia)
+        mask = df["vigencia_desde"] > ref
+        if mask.any():
+            next_start = df.loc[mask, "vigencia_desde"].min()
+            mask = df["vigencia_desde"] == next_start
+        df = df[mask].copy()
+    result = df[["categoria", "ingresos_brutos"]].sort_values("categoria")
+    result = result.rename(columns={"categoria": "Categoria", "ingresos_brutos": "Ingresos brutos"})
+    return result
+
+
 def obtener_info_categorias() -> dict:
     db_path = _get_db_path()
     if not db_path.exists():

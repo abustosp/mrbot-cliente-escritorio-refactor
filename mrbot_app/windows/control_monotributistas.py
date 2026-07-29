@@ -21,6 +21,7 @@ from mrbot_app.constants import EXAMPLE_DIR
 from mrbot_app.servicios.categorias_monotributo import (
     ensure_categorias_db,
     obtener_info_categorias,
+    cargar_categorias_siguiente,
     CATEGORIAS_DB_FILENAME,
 )
 from mrbot_app.helpers import make_today_str
@@ -108,6 +109,7 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandl
         ttk.Button(actions_frame, text="1. Descargar Mis Comprobantes", command=self.descargar_mc).pack(fill="x", padx=8, pady=4)
         ttk.Button(actions_frame, text="2. Descargar RCEL", command=self.descargar_rcel).pack(fill="x", padx=8, pady=4)
         ttk.Button(actions_frame, text="3. Procesar y Generar Reporte", command=self.procesar_datos).pack(fill="x", padx=8, pady=4)
+        ttk.Button(actions_frame, text="3.1 Calcular Recategorización", command=self.procesar_recategorizacion).pack(fill="x", padx=8, pady=4)
         ttk.Button(actions_frame, text="Abrir Reporte General HTML", command=self.abrir_reporte_html).pack(fill="x", padx=8, pady=4)
 
         self._stage_definitions = {
@@ -635,6 +637,114 @@ class ControlMonotributistasWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandl
 
         self._set_stage_progress("proc", 1, 1)
         self._log_info_stage("proc", f"Reporte generado: {output_file}")
+        self._log_info_stage("proc", f"Reportes HTML: {html_output_dir}")
+
+    def procesar_recategorizacion(self) -> None:
+        desde, hasta, error = self._validar_rango_fechas()
+        if error:
+            self.lbl_rango_error.configure(text=error)
+            return
+        self.lbl_rango_error.configure(text="")
+
+        cat_path = self._determinar_categoria_path()
+        if cat_path is None:
+            messagebox.showerror(
+                "Error",
+                "No se encontró base de categorías.\n"
+                "Usá 'Actualizar Base de Datos' para descargarla, "
+                "o colocá 'Categorias.xlsx' en la raíz del proyecto."
+            )
+            return
+
+        if not cat_path.lower().endswith('.db'):
+            messagebox.showerror(
+                "Error",
+                "La recategorización requiere la base de datos de categorías (.db).\n"
+                "Usá 'Actualizar Base de Datos' para descargarla."
+            )
+            return
+
+        if messagebox.askyesno("Confirmar", "¿Procesar datos y calcular recategorización con categorías del período siguiente?"):
+            self._clear_stage_logs("proc")
+            self._set_stage_progress("proc", 0, 1)
+            self._log_info_stage("proc", "INICIADOR: Control Monotributistas | accion=Calcular Recategorización")
+            self._log_info_stage("proc", f"Rango fechas control: {desde} - {hasta}")
+            self._log_info_stage("proc", f"Categorías desde: {cat_path} (usando período siguiente)")
+
+            search_path = "descargas" if os.path.exists("descargas") else "."
+
+            self._run_stage_in_thread("proc", self._worker_recategorizacion, cat_path, search_path, desde, hasta)
+
+    def _worker_recategorizacion(self, cat_path, search_path, desde: date, hasta: date):
+        self._log_info_stage("proc", f"Buscando archivos en: {search_path}")
+
+        archivos_mc = glob.glob(f"{search_path}/**/extraido/*.csv", recursive=True)
+        archivos_json = glob.glob(f"{search_path}/**/RCEL/**/*.json", recursive=True)
+        facturador_dir = os.path.join("descargas", "Control_Monotributistas", "Facturador")
+        archivos_facturador: List[str] = []
+        if os.path.isdir(facturador_dir):
+            archivos_facturador = glob.glob(os.path.join(facturador_dir, "**", "*.json"), recursive=True)
+
+        if not archivos_json:
+             archivos_json = glob.glob(f"{search_path}/**/*.json", recursive=True)
+             archivos_json = [
+                 f for f in archivos_json
+                 if os.path.basename(f) != "response_log.json"
+             ]
+
+        self._log_info_stage("proc",
+            f"Encontrados: {len(archivos_mc)} CSVs (MC), {len(archivos_json)} JSONs (RCEL), "
+            f"{len(archivos_facturador)} JSONs (Facturador)"
+        )
+
+        if not archivos_mc and not archivos_json and not archivos_facturador:
+            self._log_error_stage("proc", "No se encontraron archivos para procesar.")
+            return
+
+        output_dir = os.path.join("descargas", "Control_Monotributistas")
+        os.makedirs(output_dir, exist_ok=True)
+
+        output_file = os.path.join(output_dir, "Reporte Recategorizaciones de Monotributistas - Recategorización.xlsx")
+        html_output_dir = os.path.join(output_dir, "reportes_html_recategorizacion")
+
+        fecha_ini_ts = pd.Timestamp(desde)
+        fecha_fin_ts = pd.Timestamp(hasta)
+
+        ref_date = hasta
+        try:
+            categorias_siguiente = cargar_categorias_siguiente(ref_date)
+            if categorias_siguiente.empty:
+                self._log_error_stage("proc", "No se encontraron categorías para el período siguiente.")
+                self.after(0, lambda: messagebox.showerror(
+                    "Error",
+                    "No se encontraron categorías para el período siguiente.\n"
+                    "Verificá que la base de datos contenga escalas futuras."
+                ))
+                return
+            self._log_info_stage("proc",
+                f"Categorías del período siguiente cargadas: {len(categorias_siguiente)} categorías"
+                f" ({', '.join(categorias_siguiente['Categoria'].tolist())})"
+            )
+        except Exception as e:
+            self._log_error_stage("proc", f"Error cargando categorías del período siguiente: {e}")
+            self.after(0, lambda: messagebox.showerror("Error", f"No se pudieron cargar las categorías del período siguiente:\n{e}"))
+            return
+
+        generar_reporte_control(
+            archivos_mc,
+            archivos_json,
+            cat_path,
+            output_file,
+            log_fn=lambda msg: self._append_stage_log("proc", msg),
+            html_output_dir=html_output_dir,
+            archivos_facturador=archivos_facturador if archivos_facturador else None,
+            fecha_inicial=fecha_ini_ts,
+            fecha_final=fecha_fin_ts,
+            categorias=categorias_siguiente,
+        )
+
+        self._set_stage_progress("proc", 1, 1)
+        self._log_info_stage("proc", f"Reporte de recategorización generado: {output_file}")
         self._log_info_stage("proc", f"Reportes HTML: {html_output_dir}")
 
     def abrir_reporte_html(self) -> None:

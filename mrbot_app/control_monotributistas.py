@@ -1023,37 +1023,45 @@ def generar_reporte_control(
     archivos_facturador: Optional[List[str]] = None,
     fecha_inicial: Optional[pd.Timestamp] = None,
     fecha_final: Optional[pd.Timestamp] = None,
+    categorias: Optional[pd.DataFrame] = None,
 ) -> None:
     """
     Core logic for generating the report.
     Si html_output_dir se proporciona, también genera reportes HTML individuales
     y un reporte general con gráficos comparativos.
+    Si categorias se proporciona, se usa directamente en lugar de cargarla del archivo.
     """
     _log_info("Iniciando generación de reporte...", log_fn)
 
-    if not os.path.exists(path_categorias):
-        _log_error(f"No se encontró archivo de categorías: {path_categorias}", log_fn)
-        return
-
     try:
-        es_db = path_categorias.lower().endswith('.db')
-        if es_db:
-            from mrbot_app.servicios.categorias_monotributo import cargar_categorias
-            ref_date = fecha_final.date() if fecha_final is not None else date.today()
-            categorias = cargar_categorias(ref_date)
+        if categorias is not None:
+            es_db = True
             if fecha_inicial is None:
-                fecha_inicial = pd.Timestamp(ref_date.replace(month=ref_date.month - 11, day=1))
-                _log_info(f"fecha_inicial no proporcionada, usando por defecto: {fecha_inicial.date()}", log_fn)
+                fecha_inicial = pd.Timestamp(date.today().replace(day=1))
             if fecha_final is None:
-                fecha_final = pd.Timestamp(ref_date)
-                _log_info(f"fecha_final no proporcionada, usando por defecto: {fecha_final.date()}", log_fn)
+                fecha_final = pd.Timestamp(date.today())
+        elif not os.path.exists(path_categorias):
+            _log_error(f"No se encontró archivo de categorías: {path_categorias}", log_fn)
+            return
         else:
-            categorias = pd.read_excel(path_categorias, sheet_name='Categorias')
-            if fecha_inicial is None or fecha_final is None:
-                fecha_inicial_raw = pd.read_excel(path_categorias, sheet_name='Rango de Fechas', header=None, skiprows=1, usecols=[0]).iloc[0,0]
-                fecha_final_raw = pd.read_excel(path_categorias, sheet_name='Rango de Fechas', header=None, skiprows=1, usecols=[1]).iloc[0,0]
-                fecha_inicial = pd.to_datetime(fecha_inicial_raw, dayfirst=True)
-                fecha_final = pd.to_datetime(fecha_final_raw, dayfirst=True)
+            es_db = path_categorias.lower().endswith('.db')
+            if es_db:
+                from mrbot_app.servicios.categorias_monotributo import cargar_categorias
+                ref_date = fecha_final.date() if fecha_final is not None else date.today()
+                categorias = cargar_categorias(ref_date)
+                if fecha_inicial is None:
+                    fecha_inicial = pd.Timestamp(ref_date.replace(month=ref_date.month - 11, day=1))
+                    _log_info(f"fecha_inicial no proporcionada, usando por defecto: {fecha_inicial.date()}", log_fn)
+                if fecha_final is None:
+                    fecha_final = pd.Timestamp(ref_date)
+                    _log_info(f"fecha_final no proporcionada, usando por defecto: {fecha_final.date()}", log_fn)
+            else:
+                categorias = pd.read_excel(path_categorias, sheet_name='Categorias')
+                if fecha_inicial is None or fecha_final is None:
+                    fecha_inicial_raw = pd.read_excel(path_categorias, sheet_name='Rango de Fechas', header=None, skiprows=1, usecols=[0]).iloc[0,0]
+                    fecha_final_raw = pd.read_excel(path_categorias, sheet_name='Rango de Fechas', header=None, skiprows=1, usecols=[1]).iloc[0,0]
+                    fecha_inicial = pd.to_datetime(fecha_inicial_raw, dayfirst=True)
+                    fecha_final = pd.to_datetime(fecha_final_raw, dayfirst=True)
 
         _log_info(f"Rango fechas control: {fecha_inicial.date()} - {fecha_final.date()}", log_fn)
 
