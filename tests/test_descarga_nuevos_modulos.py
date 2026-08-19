@@ -202,7 +202,6 @@ def test_aportes_en_linea_descarga() -> None:
         "cuit_login": test_cuit,
         "clave": test_clave,
         "cuit_representado": test_cuit,
-        "archivo_historico_b64": False,
         "archivo_historico_minio": True,
         "proxy_request": False,
     }

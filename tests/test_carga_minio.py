@@ -87,7 +87,6 @@ with patch('mrbot_app.mis_comprobantes.requests.post') as mock_post:
             'descarga_recibidos': True,
             'carga_minio': True,
             'carga_json': True,  # Valor por defecto
-            'b64': False,         # Valor por defecto
             'carga_s3': False     # Valor por defecto
         }
         

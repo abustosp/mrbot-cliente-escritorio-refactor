@@ -541,7 +541,6 @@ def procesar_descarga_rcel(
         "nombre_rcel": nombre_rcel,
         "representado_cuit": cuit_representado,
         "clave": clave_representante,
-        "b64_pdf": False,
         "minio_upload": True,
     }
     if proxy_request is not None:

@@ -109,13 +109,11 @@ class VepCcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         self.opt_sel_intereses = tk.BooleanVar(value=True)
         self.opt_generar_volante = tk.BooleanVar(value=True)
         self.opt_minio_upload = tk.BooleanVar(value=True)
-        self.opt_b64_pdf = tk.BooleanVar(value=False)
         self.opt_proxy = tk.BooleanVar(value=False)
         ttk.Checkbutton(flags, text="seleccionar impuestos", variable=self.opt_sel_impuestos).pack(side="left", padx=(0, 12))
         ttk.Checkbutton(flags, text="seleccionar intereses", variable=self.opt_sel_intereses).pack(side="left", padx=(0, 12))
         ttk.Checkbutton(flags, text="generar volante", variable=self.opt_generar_volante).pack(side="left", padx=(0, 12))
         ttk.Checkbutton(flags, text="minio upload", variable=self.opt_minio_upload).pack(side="left", padx=(0, 12))
-        ttk.Checkbutton(flags, text="b64 pdf", variable=self.opt_b64_pdf).pack(side="left", padx=(0, 12))
         ttk.Checkbutton(flags, text="proxy_request", variable=self.opt_proxy).pack(side="left")
 
         self._build_filtros_frame(left_col, "impuestos", fields=["periodo", "impuesto", "concepto", "subconcepto", "categoria"])
@@ -229,7 +227,7 @@ class VepCcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
 
     def _build_payload(self, cuit_rep, clave_rep, cuit_repr, medio_pago,
                        sel_impuestos, sel_intereses, generar_volante,
-                       b64_pdf, minio_upload, proxy_request,
+                       minio_upload, proxy_request,
                        filtro_impuestos, filtro_intereses):
         payload: Dict[str, Any] = {
             "cuit_representante": cuit_rep,
@@ -240,8 +238,6 @@ class VepCcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             "seleccionar_intereses": sel_intereses,
             "generar_volante": generar_volante,
         }
-        if b64_pdf:
-            payload["b64_pdf"] = True
         if minio_upload is not None:
             payload["minio_upload"] = minio_upload
         if proxy_request:
@@ -298,7 +294,6 @@ class VepCcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             sel_impuestos=bool(self.opt_sel_impuestos.get()),
             sel_intereses=bool(self.opt_sel_intereses.get()),
             generar_volante=bool(self.opt_generar_volante.get()),
-            b64_pdf=bool(self.opt_b64_pdf.get()),
             minio_upload=bool(self.opt_minio_upload.get()),
             proxy_request=bool(self.opt_proxy.get()),
             filtro_impuestos=filtro_impuestos,
@@ -367,7 +362,6 @@ class VepCcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         sel_imp_default = bool(self.opt_sel_impuestos.get())
         sel_int_default = bool(self.opt_sel_intereses.get())
         gen_vol_default = bool(self.opt_generar_volante.get())
-        b64_default = bool(self.opt_b64_pdf.get())
         minio_default = bool(self.opt_minio_upload.get())
         proxy_default = bool(self.opt_proxy.get())
 
@@ -385,12 +379,12 @@ class VepCcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         self.run_in_thread(
             self._worker_excel, df_copy, url, headers,
             medio_pago_default, sel_imp_default, sel_int_default,
-            gen_vol_default, b64_default, minio_default, proxy_default,
+            gen_vol_default, minio_default, proxy_default,
         )
 
     def _worker_excel(self, df, url, headers, medio_pago_default,
                       sel_imp_default, sel_int_default, gen_vol_default,
-                      b64_default, minio_default, proxy_default):
+                      minio_default, proxy_default):
         rows: List[Dict[str, Any]] = []
         total = len(df)
         self.set_progress(0, total)
@@ -411,7 +405,6 @@ class VepCcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
                     sel_imp_default,
                     sel_int_default,
                     gen_vol_default,
-                    b64_default,
                     minio_default,
                     proxy_default,
                 ): idx
@@ -440,7 +433,7 @@ class VepCcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
 
     def _process_row_vep_ccma(self, row, url, headers, medio_pago_default,
                                sel_imp_default, sel_int_default, gen_vol_default,
-                               b64_default, minio_default, proxy_default):
+                               minio_default, proxy_default):
         if self._abort_event.is_set():
             return None
 
@@ -451,10 +444,6 @@ class VepCcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         sel_imp = parse_bool_cell(row.get("seleccionar_impuestos"), default=sel_imp_default)
         sel_int = parse_bool_cell(row.get("seleccionar_intereses"), default=sel_int_default)
         gen_vol = parse_bool_cell(row.get("generar_volante"), default=gen_vol_default)
-
-        b64_flag = self._parse_optional_bool(row.get("b64_pdf"))
-        if b64_flag is None:
-            b64_flag = b64_default
 
         minio_flag = self._parse_optional_bool(row.get("minio_upload"))
         if minio_flag is None:
@@ -475,7 +464,6 @@ class VepCcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             sel_impuestos=sel_imp,
             sel_intereses=sel_int,
             generar_volante=gen_vol,
-            b64_pdf=b64_flag,
             minio_upload=minio_flag,
             proxy_request=proxy_flag,
             filtro_impuestos=filtro_impuestos,

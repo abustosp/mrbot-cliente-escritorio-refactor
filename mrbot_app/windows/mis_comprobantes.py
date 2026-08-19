@@ -105,7 +105,6 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
         opts.pack(fill="x", pady=4)
         self.emitidos_var = tk.BooleanVar(value=True)
         self.recibidos_var = tk.BooleanVar(value=True)
-        self.b64_var = tk.BooleanVar(value=False)
         self.minio_var = tk.BooleanVar(value=True)
         self.proxy_var = tk.BooleanVar(value=False)
         self.convertir_xlsx_var = tk.BooleanVar(value=False)
@@ -113,9 +112,8 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
 
         ttk.Checkbutton(opts, text="Descarga Emitidos", variable=self.emitidos_var).grid(row=0, column=0, padx=4, pady=2, sticky="w")
         ttk.Checkbutton(opts, text="Descarga Recibidos", variable=self.recibidos_var).grid(row=0, column=1, padx=4, pady=2, sticky="w")
-        ttk.Checkbutton(opts, text="Archivos en Base64", variable=self.b64_var).grid(row=0, column=2, padx=4, pady=2, sticky="w")
-        ttk.Checkbutton(opts, text="Carga MinIO", variable=self.minio_var).grid(row=0, column=3, padx=4, pady=2, sticky="w")
-        ttk.Checkbutton(opts, text="proxy_request", variable=self.proxy_var).grid(row=0, column=4, padx=4, pady=2, sticky="w")
+        ttk.Checkbutton(opts, text="Carga MinIO", variable=self.minio_var).grid(row=0, column=2, padx=4, pady=2, sticky="w")
+        ttk.Checkbutton(opts, text="proxy_request", variable=self.proxy_var).grid(row=0, column=3, padx=4, pady=2, sticky="w")
         cb_convertir = ttk.Checkbutton(opts, text="Convertir a XLSX", variable=self.convertir_xlsx_var)
         cb_convertir.grid(row=1, column=0, padx=4, pady=2, sticky="w")
         ToolTip(cb_convertir, "Convierte automáticamente los CSV descargados a\nformato XLSX. Incluye formato de fecha, descripción\nde comprobante y fila superior con CUIT.")
@@ -458,7 +456,6 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
         descarga_emitidos = self.emitidos_var.get()
         descarga_recibidos = self.recibidos_var.get()
         carga_minio = self.minio_var.get()
-        b64 = self.b64_var.get()
         proxy_request = self.proxy_var.get()
         convertir_xlsx = self._debe_convertir_xlsx()
         reemplazar_csv = bool(self.reemplazar_csv_var.get())
@@ -481,12 +478,12 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
             cuit_repr or cuit_inicio or "sin_cuit",
             self._worker_individual,
             desde, hasta, cuit_inicio, nombre_repr, cuit_repr, clave,
-            descarga_emitidos, descarga_recibidos, carga_minio, b64, target_dir, proxy_request,
+            descarga_emitidos, descarga_recibidos, carga_minio, target_dir, proxy_request,
             convertir_xlsx, reemplazar_csv
         )
 
     def _worker_individual(self, desde, hasta, cuit_inicio, nombre_repr, cuit_repr, clave,
-                           d_emitidos, d_recibidos, minio, b64, target_dir, proxy_request,
+                           d_emitidos, d_recibidos, minio, target_dir, proxy_request,
                            convertir_xlsx, reemplazar_csv):
 
         self.log_separator(f"{nombre_repr} ({cuit_repr})")
@@ -505,7 +502,7 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
 
         response = consulta_mc(
             desde, hasta, cuit_inicio, nombre_repr, cuit_repr, clave,
-            d_emitidos, d_recibidos, carga_minio=minio, carga_json=False, b64=b64, proxy_request=proxy_request,
+            d_emitidos, d_recibidos, carga_minio=minio, carga_json=False, proxy_request=proxy_request,
             log_fn=self.log_message
         )
 
@@ -683,7 +680,7 @@ class GuiDescargaMC(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downlo
 
             response = consulta_mc(
                 desde, hasta, cuit_inicio, nombre_repr, cuit_repr, clave,
-                d_emitidos, d_recibidos, carga_minio=True, carga_json=False, b64=False, proxy_request=proxy_request,
+                d_emitidos, d_recibidos, carga_minio=True, carga_json=False, proxy_request=proxy_request,
                 log_fn=self.log_message
             )
 

@@ -388,7 +388,6 @@ def consulta_mc(
     descarga_recibidos: bool,
     carga_minio: bool = True,
     carga_json: bool = True,
-    b64: bool = False,
     proxy_request: Optional[bool] = None,
     log_fn: Optional[Callable[[str], None]] = None,
 ):
@@ -406,7 +405,6 @@ def consulta_mc(
         descarga_recibidos: True para descargar recibidos
         carga_minio: True para subir archivos a MinIO y obtener URLs
         carga_json: True para recibir datos en JSON
-        b64: True para recibir archivos en base64
         proxy_request: True/False/None para usar proxy
         log_fn: Funcion opcional para registrar logs (UI/CLI)
 
@@ -434,7 +432,6 @@ def consulta_mc(
         "descarga_recibidos": descarga_recibidos,
         "carga_minio": carga_minio,
         "carga_json": carga_json,
-        "b64": b64
     }
 
     if proxy_request is not None:

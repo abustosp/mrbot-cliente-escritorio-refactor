@@ -114,10 +114,9 @@ def ejemplo_consulta_completa():
         descarga_recibidos=True,
         carga_minio=True,
         carga_json=True,
-        b64=False,  # No queremos base64 en este ejemplo
         carga_s3=False
     )
-    
+
     if not response.get('success'):
         print(f"✗ Error: {response.get('message')}")
         return
@@ -205,14 +204,12 @@ def ejemplo_multiples_formatos():
         descarga_recibidos=False,
         carga_minio=True,   # URLs de MinIO
         carga_json=True,    # Datos en JSON
-        b64=True,          # Archivos en base64
         carga_s3=True      # URLs de S3
     )
-    
+
     print("Formatos solicitados:")
     print("  - MinIO: URLs para descarga")
     print("  - JSON: Datos estructurados")
-    print("  - Base64: Archivos codificados")
     print("  - S3: URLs alternativas")
     
     print("\n💡 Puedes combinar los formatos según tus necesidades")
@@ -259,7 +256,7 @@ def main():
         print("   - Manejo de respuestas")
         
         print("\n📝 Ejemplo 5: Múltiples formatos")
-        print("   - MinIO + JSON + Base64 + S3")
+        print("   - MinIO + JSON + S3")
         print("   - Flexibilidad en formatos de salida")
         
     except Exception as e:

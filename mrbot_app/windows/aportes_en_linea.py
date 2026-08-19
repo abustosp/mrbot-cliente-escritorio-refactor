@@ -114,7 +114,6 @@ class AportesEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             "cuit_login": self.cuit_login_var.get().strip(),
             "clave": self.clave_var.get(),
             "cuit_representado": cuit_repr,
-            "archivo_historico_b64": False,
             "archivo_historico_minio": True,
             "proxy_request": bool(self.proxy_var.get()),
         }
@@ -221,7 +220,6 @@ class AportesEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             "cuit_login": cuit_login,
             "clave": str(row.get("clave", "")),
             "cuit_representado": cuit_repr,
-            "archivo_historico_b64": False,
             "archivo_historico_minio": True,
         }
         if proxy_request is not None:

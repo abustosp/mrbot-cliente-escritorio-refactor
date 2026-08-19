@@ -69,12 +69,10 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
 
         opts = ttk.Frame(container)
         opts.pack(fill="x", pady=4)
-        self.b64_var = tk.BooleanVar(value=False)
         self.minio_var = tk.BooleanVar(value=True)
         self.proxy_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(opts, text="PDF en base64", variable=self.b64_var).grid(row=0, column=0, padx=4, pady=2, sticky="w")
-        ttk.Checkbutton(opts, text="Subir a MinIO", variable=self.minio_var).grid(row=0, column=1, padx=4, pady=2, sticky="w")
-        ttk.Checkbutton(opts, text="proxy_request", variable=self.proxy_var).grid(row=0, column=2, padx=4, pady=2, sticky="w")
+        ttk.Checkbutton(opts, text="Subir a MinIO", variable=self.minio_var).grid(row=0, column=0, padx=4, pady=2, sticky="w")
+        ttk.Checkbutton(opts, text="proxy_request", variable=self.proxy_var).grid(row=0, column=1, padx=4, pady=2, sticky="w")
 
         # Download Path
         self.add_download_path_frame(container)
@@ -219,7 +217,6 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
             "nombre_rcel": self.nombre_var.get().strip(),
             "representado_cuit": self.cuit_repr_var.get().strip(),
             "clave": self.clave_var.get(),
-            "b64_pdf": bool(self.b64_var.get()),
             "minio_upload": bool(self.minio_var.get()),
             "proxy_request": bool(self.proxy_var.get()),
         }
@@ -284,7 +281,6 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
         # Capture defaults and options
         default_desde = format_date_str(self.desde_var.get().strip())
         default_hasta = format_date_str(self.hasta_var.get().strip())
-        b64_pdf = bool(self.b64_var.get())
         minio_upload = bool(self.minio_var.get())
         default_proxy = bool(self.proxy_var.get())
 
@@ -294,9 +290,9 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
         self.clear_logs()
         self.log_start("RCEL", {"modo": "masivo", "filas": len(df_copy)})
 
-        self.run_in_thread(self._worker_excel, df_copy, url, headers, default_desde, default_hasta, b64_pdf, minio_upload, default_proxy)
+        self.run_in_thread(self._worker_excel, df_copy, url, headers, default_desde, default_hasta, minio_upload, default_proxy)
 
-    def _worker_excel(self, df, url, headers, default_desde, default_hasta, b64_pdf, minio_upload, default_proxy):
+    def _worker_excel(self, df, url, headers, default_desde, default_hasta, minio_upload, default_proxy):
         rows: List[Dict[str, Any]] = []
         total = len(df)
         self.set_progress(0, total)
@@ -315,7 +311,6 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
                     headers,
                     default_desde,
                     default_hasta,
-                    b64_pdf,
                     minio_upload,
                     default_proxy,
                 ): idx
@@ -344,7 +339,7 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
         self.set_execution_summary(self.build_download_execution_summary("RCEL", rows, total_expected=total))
         self.log_info("Procesamiento masivo finalizado.")
 
-    def _process_row_rcel(self, row, url, headers, default_desde, default_hasta, b64_pdf, minio_upload, default_proxy):
+    def _process_row_rcel(self, row, url, headers, default_desde, default_hasta, minio_upload, default_proxy):
         if self._abort_event.is_set():
             return None
 
@@ -368,7 +363,6 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
             "nombre_rcel": str(row.get("nombre_rcel", "")).strip(),
             "representado_cuit": cuit_repr,
             "clave": str(row.get("clave", "")),
-            "b64_pdf": b64_pdf,
             "minio_upload": minio_upload,
         }
         if proxy_request is not None:

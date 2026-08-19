@@ -53,7 +53,7 @@ def test_function_signatures():
     ]
     
     optional_params = [
-        'carga_minio', 'carga_json', 'b64', 'carga_s3', 'proxy_request'
+        'carga_minio', 'carga_json', 'carga_s3', 'proxy_request'
     ]
     
     print(f"Parámetros de consulta_mc: {params}")
@@ -89,7 +89,6 @@ def test_request_structure():
         'descarga_recibidos': True,
         'carga_minio': True,
         'carga_json': True,
-        'b64': False,
         'carga_s3': False
     }
     
