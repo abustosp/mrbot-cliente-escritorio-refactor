@@ -228,6 +228,36 @@ def _parse_bool(valor: Any, default: bool = False) -> bool:
         return False
     return default
 
+
+def _eliminar_comprobantes_duplicados(
+    consolidado: pd.DataFrame,
+    log_fn: Optional[Callable[[str], None]] = None,
+) -> pd.DataFrame:
+    """Elimina comprobantes repetidos diferenciando emitidos de recibidos."""
+    if consolidado.empty or 'AUX' not in consolidado.columns or 'Tipo_MC' not in consolidado.columns:
+        return consolidado
+
+    resultado = consolidado.copy()
+    sufijo = resultado['Tipo_MC'].map({
+        'Emitido': 'MCE',
+        'Recibido': 'MCR',
+    })
+    aux = resultado['AUX'].astype('string').str.strip()
+    resultado['_AUX_temporal'] = aux + '-' + sufijo
+
+    clave_valida = aux.notna() & aux.ne('') & sufijo.notna()
+    duplicados = clave_valida & resultado['_AUX_temporal'].duplicated(keep='first')
+    cantidad = int(duplicados.sum())
+    if cantidad:
+        _log_info(
+            f"Se eliminaron {cantidad} comprobantes duplicados por AUX temporal.",
+            log_fn,
+        )
+        resultado = resultado.loc[~duplicados].copy()
+
+    resultado.drop(columns=['_AUX_temporal'], inplace=True)
+    return resultado
+
 def procesar_descarga_mc(
     row: pd.Series,
     log_fn: Optional[Callable[[str], None]] = None,
@@ -1153,11 +1183,15 @@ def generar_reporte_control(
              consolidado = pd.merge(consolidado, info_facturas_pdf[columnas_rcel_requeridas], how='left', on='AUX')
         else:
              if not info_facturas_pdf.empty:
-                 _log_info("Archivos JSON encontrados pero sin columnas RCEL esperadas (AUX, Desde, Hasta, Archivo PDF). "
-                           "Se ignorarán y se usará la fecha de emisión como fallback.", log_fn)
+                  _log_info("Archivos JSON encontrados pero sin columnas RCEL esperadas (AUX, Desde, Hasta, Archivo PDF). "
+                            "Se ignorarán y se usará la fecha de emisión como fallback.", log_fn)
              consolidado['Desde'] = pd.NaT
              consolidado['Hasta'] = pd.NaT
              consolidado['Archivo PDF'] = None
+
+        # Deduplicate only after the RCEL merge so repeated source rows or
+        # repeated RCEL metadata cannot inflate the report totals.
+        consolidado = _eliminar_comprobantes_duplicados(consolidado, log_fn)
 
         consolidado['Cruzado'] = np.where(consolidado['Archivo PDF'].notnull(), 'Si', 'No')
 
