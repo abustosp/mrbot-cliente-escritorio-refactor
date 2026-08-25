@@ -41,6 +41,7 @@ DEFAULT_EMAIL = os.getenv("MAIL", "")
 DEFAULT_POST_TIMEOUT = _get_env_int("TIMEOUT_POST", 120)
 DEFAULT_GET_TIMEOUT = _get_env_int("TIMEOUT_GET", 60)
 DEFAULT_MAX_WORKERS = _get_env_int("MAX_WORKERS_MRBOT_API", 1)
+DEFAULT_TIMEOUT_MC_CONTROL_MONOTRIBUTO = 30
 DEFAULT_NOTIFICACION_MESSAGEBOX = _get_env_bool("NOTIFICACION_MESSAGEBOX", False)
 CATEGORIAS_MONOTRIBUTO_URL = os.getenv("CATEGORIAS_MONOTRIBUTO_URL", "https://mrbot.com.ar/static/file/categorias_monotributo.db")
 
@@ -73,6 +74,18 @@ def get_max_workers() -> int:
     Lee MAX_WORKERS_MRBOT_API del entorno, default 1.
     """
     return _get_env_int("MAX_WORKERS_MRBOT_API", DEFAULT_MAX_WORKERS)
+
+
+def get_timeout_mc_control_monotributo() -> int:
+    """
+    Devuelve el timeout que la API usa para Mis Comprobantes del control
+    de monotributistas. Lee timeout_mc_control_monotributo del entorno,
+    con 30 segundos como valor por defecto.
+    """
+    return _get_env_int(
+        "timeout_mc_control_monotributo",
+        DEFAULT_TIMEOUT_MC_CONTROL_MONOTRIBUTO,
+    )
 
 
 def get_notificacion_messagebox() -> bool:

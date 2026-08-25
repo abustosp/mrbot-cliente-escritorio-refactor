@@ -390,6 +390,7 @@ def consulta_mc(
     carga_json: bool = True,
     proxy_request: Optional[bool] = None,
     log_fn: Optional[Callable[[str], None]] = None,
+    timeout_mc: Optional[int] = None,
 ):
     """
     Consulta de Mis Comprobantes usando la API v1.
@@ -407,6 +408,8 @@ def consulta_mc(
         carga_json: True para recibir datos en JSON
         proxy_request: True/False/None para usar proxy
         log_fn: Funcion opcional para registrar logs (UI/CLI)
+        timeout_mc: Timeout interno de la consulta MC en segundos.
+            Si es None, no se incluye en el payload.
 
     Returns:
         Dict con la respuesta de la API
@@ -436,6 +439,8 @@ def consulta_mc(
 
     if proxy_request is not None:
         payload["proxy_request"] = proxy_request
+    if timeout_mc is not None:
+        payload["timeout_mc"] = timeout_mc
 
     safe_payload = dict(payload)
     if "contrasena" in safe_payload:

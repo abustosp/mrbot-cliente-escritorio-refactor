@@ -195,6 +195,7 @@ class MainMenu(tk.Tk):
                         "# API_KEY=\n"
                         "# MAIL=\n"
                         "# NOTIFICACION_MESSAGEBOX=false\n"
+                        "# timeout_mc_control_monotributo=30\n"
                         "# WSAA_TESTING=true\n"
                         "# WSAA_SERVICE opciones: veconsumerws | wsfe\n"
                         "# WSAA_SERVICE=veconsumerws\n"

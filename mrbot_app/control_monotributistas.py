@@ -12,6 +12,7 @@ from openpyxl import load_workbook, Workbook
 
 from mrbot_app.mis_comprobantes import consulta_mc, crear_directorio_seguro, extraer_csv_de_zip, FALLBACK_BASE_DIR
 from mrbot_app.consulta import descargar_archivos_minio_concurrente
+from mrbot_app.config import get_timeout_mc_control_monotributo
 from mrbot_app.helpers import format_date_str, safe_post, build_headers, ensure_trailing_slash
 from mrbot_app.formatos import (
     aplicar_formato_encabezado,
@@ -263,6 +264,7 @@ def procesar_descarga_mc(
 
     descargar_emitidos = (descarga_MC_emitidos == 'si')
     descargar_recibidos = (descarga_MC_recibidos == 'si')
+    timeout_mc = get_timeout_mc_control_monotributo()
     proxy_request: Optional[bool] = None
     if "proxy_request_mc" in row.index or "proxy_request" in row.index:
         proxy_request = _parse_bool(row.get('proxy_request_mc', row.get('proxy_request', '')), default=False)
@@ -306,6 +308,7 @@ def procesar_descarga_mc(
             carga_minio=True,
             carga_json=False,
             proxy_request=proxy_request,
+            timeout_mc=timeout_mc,
             log_fn=log_fn
         )
 
@@ -1278,4 +1281,3 @@ def generar_reporte_control(
         _log_error(f"Error generando reporte: {e}", log_fn)
         import traceback
         _log_error(traceback.format_exc(), log_fn)
-
