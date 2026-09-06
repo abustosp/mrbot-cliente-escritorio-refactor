@@ -18,3 +18,4 @@ temp_build
 !.github/workflows/release-zips-on-tag.yml
 ejecutable-mrbot-refactored
 *.db
+.~lock.*#
