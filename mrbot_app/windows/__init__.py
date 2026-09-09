@@ -15,6 +15,7 @@ from mrbot_app.windows.ret_per_provinciales_misiones import RetPerMisionesWindow
 from mrbot_app.windows.mis_facilidades import MisFacilidadesWindow
 from mrbot_app.windows.mis_comprobantes import GuiDescargaMC
 from mrbot_app.windows.mis_retenciones import MisRetencionesWindow
+from mrbot_app.windows.mis_retenciones_iva_simple import MisRetencionesIvaSimpleWindow
 from mrbot_app.windows.rcel import RcelWindow
 from mrbot_app.windows.hacienda import HaciendaWindow
 from mrbot_app.windows.liquidacion_granos import LiquidacionGranosWindow
@@ -48,6 +49,7 @@ __all__ = [
     "LiquidacionGranosWindow",
     "MisFacilidadesWindow",
     "MisRetencionesWindow",
+    "MisRetencionesIvaSimpleWindow",
     "SifereWindow",
     "SctWindow",
     "SrtAlicuotasWindow",

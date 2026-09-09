@@ -21,6 +21,7 @@ from mrbot_app.windows.mixins import (
 class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadHandlerMixin):
     MODULE_DIR = "Mis_Retenciones"
     ALLOWED_IMPUESTOS = ["216", "217", "219", "353", "767", "787"]
+    SIAP_ALLOWED_IMPUESTOS = ["216", "217", "219", "767", "353"]
 
     def __init__(self, master=None, config_provider=None, example_paths: Optional[Dict[str, str]] = None):
         super().__init__(master, title="Mis Retenciones", config_provider=config_provider)
@@ -51,7 +52,7 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
         ttk.Label(inputs, text="Clave representante").grid(row=1, column=0, sticky="w", padx=4, pady=2)
         ttk.Label(inputs, text="CUIT representado").grid(row=2, column=0, sticky="w", padx=4, pady=2)
         ttk.Label(inputs, text="Denominacion").grid(row=3, column=0, sticky="w", padx=4, pady=2)
-        ttk.Label(inputs, text="Impuestos (216,217,219,353,767,787 | sep: , ; |)").grid(row=4, column=0, sticky="w", padx=4, pady=2)
+        ttk.Label(inputs, text="Impuestos (sep: , ; |)").grid(row=4, column=0, sticky="w", padx=4, pady=2)
         self.cuit_rep_var = tk.StringVar()
         self.clave_rep_var = tk.StringVar()
         self.cuit_repr_var = tk.StringVar()
@@ -67,7 +68,13 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
         opts = ttk.Frame(container)
         opts.pack(fill="x", pady=2)
         self.proxy_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(opts, text="proxy_request", variable=self.proxy_var).grid(row=0, column=0, padx=4, pady=2, sticky="w")
+        self.exportar_para_aplicativo_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            opts,
+            text="Exportar para aplicativo (SIAP + XLS; impuestos válidos: 216, 217, 219, 767, 353)",
+            variable=self.exportar_para_aplicativo_var,
+        ).grid(row=0, column=0, padx=4, pady=2, sticky="w")
+        ttk.Checkbutton(opts, text="proxy_request", variable=self.proxy_var).grid(row=1, column=0, padx=4, pady=2, sticky="w")
 
         # Download path (Mixin)
         self.add_download_path_frame(container)
@@ -123,7 +130,7 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
             return text
         return None
 
-    def _parse_impuestos(self, value: Any) -> tuple[List[str], Optional[str]]:
+    def _parse_impuestos(self, value: Any, exportar_para_aplicativo: bool = False) -> tuple[List[str], Optional[str]]:
         if value is None:
             return [], None
         if isinstance(value, list):
@@ -137,7 +144,8 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
 
         impuestos: List[str] = []
         invalid: List[str] = []
-        allowed = set(self.ALLOWED_IMPUESTOS)
+        allowed_values = self.SIAP_ALLOWED_IMPUESTOS if exportar_para_aplicativo else self.ALLOWED_IMPUESTOS
+        allowed = set(allowed_values)
 
         for item in items:
             impuesto = self._coerce_impuesto(item)
@@ -148,9 +156,10 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
                 impuestos.append(impuesto)
 
         if invalid:
-            valid_text = ", ".join(self.ALLOWED_IMPUESTOS)
+            valid_text = ", ".join(allowed_values)
             invalid_text = ", ".join(invalid)
-            return [], f"Impuestos invalidos: {invalid_text}. Valores permitidos: {valid_text}."
+            mode = "para SIAP" if exportar_para_aplicativo else ""
+            return [], f"Impuestos invalidos {mode}: {invalid_text}. Valores permitidos: {valid_text}."
 
         return impuestos, None
 
@@ -178,7 +187,8 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
     def consulta_individual(self) -> None:
         base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
-        impuestos, error = self._parse_impuestos(self.impuestos_var.get())
+        exportar_para_aplicativo = bool(self.exportar_para_aplicativo_var.get())
+        impuestos, error = self._parse_impuestos(self.impuestos_var.get(), exportar_para_aplicativo)
         if error:
             messagebox.showerror("Error", error)
             return
@@ -191,6 +201,7 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
             "desde": format_date_str(self.desde_var.get().strip()),
             "hasta": format_date_str(self.hasta_var.get().strip()),
             "impuestos": impuestos,
+            "exportar_para_aplicativo": exportar_para_aplicativo,
             "carga_minio": True,
             "proxy_request": bool(self.proxy_var.get()),
         }
@@ -257,9 +268,19 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
         self.clear_logs()
         self.log_start("Mis Retenciones", {"modo": "masivo", "filas": len(df_copy)})
 
-        self.run_in_thread(self._worker_excel, df_copy, url, headers, default_desde, default_hasta, default_proxy)
+        default_exportar_para_aplicativo = bool(self.exportar_para_aplicativo_var.get())
+        self.run_in_thread(
+            self._worker_excel,
+            df_copy,
+            url,
+            headers,
+            default_desde,
+            default_hasta,
+            default_proxy,
+            default_exportar_para_aplicativo,
+        )
 
-    def _worker_excel(self, df, url, headers, default_desde, default_hasta, default_proxy):
+    def _worker_excel(self, df, url, headers, default_desde, default_hasta, default_proxy, default_exportar_para_aplicativo=False):
         rows: List[Dict[str, Any]] = []
         total = len(df)
         self.set_progress(0, total)
@@ -279,6 +300,7 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
                     default_desde,
                     default_hasta,
                     default_proxy,
+                    default_exportar_para_aplicativo,
                 ): idx
                 for idx, (_, row) in enumerate(df.iterrows(), start=1)
             }
@@ -305,7 +327,7 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
         self.set_execution_summary(self.build_download_execution_summary("Mis Retenciones", rows, total_expected=total))
         self.log_info("Procesamiento masivo finalizado.")
 
-    def _process_row_retenciones(self, row, url, headers, default_desde, default_hasta, default_proxy):
+    def _process_row_retenciones(self, row, url, headers, default_desde, default_hasta, default_proxy, default_exportar_para_aplicativo=False):
         if self._abort_event.is_set():
             return None
 
@@ -313,7 +335,10 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
         cuit_repr = self._optional_value(str(row.get("cuit_representado", "")))
         desde = format_date_str(row.get("desde", "")) or default_desde
         hasta = format_date_str(row.get("hasta", "")) or default_hasta
-        impuestos, error = self._parse_impuestos(row.get("impuestos", ""))
+        exportar_para_aplicativo = parse_bool_cell(
+            row.get("exportar_para_aplicativo"), default=default_exportar_para_aplicativo
+        ) if "exportar_para_aplicativo" in row.index else default_exportar_para_aplicativo
+        impuestos, error = self._parse_impuestos(row.get("impuestos", ""), exportar_para_aplicativo)
         proxy_request = None
         if "proxy_request" in row.index:
             proxy_request = parse_bool_cell(row.get("proxy_request"), default=default_proxy)
@@ -340,6 +365,7 @@ class MisRetencionesWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin,
             "desde": desde,
             "hasta": hasta,
             "impuestos": impuestos,
+            "exportar_para_aplicativo": exportar_para_aplicativo,
             "carga_minio": True,
         }
         if proxy_request is not None:

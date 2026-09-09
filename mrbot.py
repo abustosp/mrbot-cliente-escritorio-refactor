@@ -157,6 +157,9 @@ class MainMenu(tk.Tk):
         ttk.Button(btns, text="VEP desde CCMA", width=btn_width, command=self.open_vep_ccma).grid(
             row=5, column=2, padx=4, pady=4, sticky="nsew"
         )
+        ttk.Button(btns, text="Mis Retenciones IVA Simple", width=btn_width, command=self.open_mis_retenciones_iva_simple).grid(
+            row=5, column=3, padx=4, pady=4, sticky="nsew"
+        )
 
         ttk.Separator(btns, orient="horizontal").grid(
             row=6, column=0, columnspan=4, sticky="ew", pady=(10, 4)
@@ -255,6 +258,9 @@ class MainMenu(tk.Tk):
 
     def open_mis_retenciones(self) -> None:
         MisRetencionesWindow(self, self.current_config, self.example_paths)
+
+    def open_mis_retenciones_iva_simple(self) -> None:
+        MisRetencionesIvaSimpleWindow(self, self.current_config, self.example_paths)
 
     def open_sifere(self) -> None:
         SifereWindow(self, self.current_config, self.example_paths)
